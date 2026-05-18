@@ -11,90 +11,42 @@
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body {
-  background: #111;
-  width: 100%; height: 100%;
-  display: flex; align-items: center; justify-content: center;
-  overflow: hidden;
+  background: #111; width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
 }
-#outer {
-  position: relative;
-  width: 640px; height: 480px;
-  flex-shrink: 0;
-}
-#screen {
-  position: absolute; inset: 0;
-  background: #000;
-  overflow: hidden;
-}
+#outer { position: relative; width: 640px; height: 480px; flex-shrink: 0; }
+#screen { position: absolute; inset: 0; background: #000; overflow: hidden; }
 #terminal {
   position: absolute; inset: 0;
   font-family: 'PC9800', monospace;
-  font-size: 15.36px;
-  line-height: 19.2px;
-  letter-spacing: 0px;
-  color: #C0C0C0;
-  white-space: pre;
-  overflow: hidden;
-  image-rendering: pixelated;
-  image-rendering: crisp-edges;
-  -webkit-font-smoothing: none;
-  -moz-osx-font-smoothing: unset;
-  text-rendering: optimizeSpeed;
-  font-variant-ligatures: none;
-  font-feature-settings: "kern" 0, "liga" 0;
-  z-index: 2;
+  font-size: 15.36px; line-height: 19.2px; letter-spacing: 0px; color: #C0C0C0;
+  white-space: pre; overflow: hidden; image-rendering: pixelated;
+  -webkit-font-smoothing: none; -moz-osx-font-smoothing: unset;
+  text-rendering: optimizeSpeed; font-variant-ligatures: none;
+  font-feature-settings: "kern" 0, "liga" 0; z-index: 2;
 }
-.row {
-  display: block;
-  height: 19.2px;
-  width: 640px;
-  overflow: hidden;
-}
+.row { display: block; height: 19.2px; width: 640px; overflow: hidden; }
 .cursor {
-  display: inline-block;
-  width: 8px; height: 15px;
-  background: #C0C0C0;
-  vertical-align: text-top;
-  animation: blink 0.5s step-end infinite;
-  position: relative; top: 1px;
+  display: inline-block; width: 8px; height: 15px; background: #C0C0C0;
+  vertical-align: text-top; animation: blink 0.5s step-end infinite; position: relative; top: 1px;
 }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
-.wh  { color: #FFFFFF; }
-.gr  { color: #C0C0C0; }
-.dim { color: #555555; }
-.grn { color: #00FF00; }
-.red { color: #FF4444; }
-.yel { color: #FFCC00; }
-.cyn { color: #44CCFF; }
-.pur { color: #BB88FF; }
-.org { color: #FF8844; }
-.blu { color: #88AAFF; }
-#crt-canvas {
-  position: absolute; inset: 0;
-  width: 100%; height: 100%;
-  pointer-events: none; z-index: 10; opacity: 0.18;
-}
-#flicker {
-  position: absolute; inset: 0;
-  pointer-events: none; z-index: 11;
-  animation: flicker 0.15s step-end infinite;
-}
+.wh{color:#FFFFFF} .gr{color:#C0C0C0} .dim{color:#555555} .grn{color:#00FF00}
+.red{color:#FF4444} .yel{color:#FFCC00} .cyn{color:#44CCFF} .pur{color:#BB88FF}
+.org{color:#FF8844} .blu{color:#88AAFF}
+#crt-canvas { position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:10;opacity:0.18; }
+#flicker { position:absolute;inset:0;pointer-events:none;z-index:11;animation:flicker 0.15s step-end infinite; }
 @keyframes flicker {
-  0%,82%,85%,91%,93%,97%,100% { opacity: 1; }
-  83% { opacity: 0.96; }
-  92% { opacity: 0.98; }
-  98% { opacity: 0.97; }
+  0%,82%,85%,91%,93%,97%,100%{opacity:1} 83%{opacity:0.96} 92%{opacity:0.98} 98%{opacity:0.97}
 }
 #vignette {
-  position: absolute; inset: 0;
-  background: radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(0,0,0,0.75) 100%);
-  pointer-events: none; z-index: 12;
+  position:absolute;inset:0;
+  background:radial-gradient(ellipse at 50% 50%,transparent 55%,rgba(0,0,0,0.75) 100%);
+  pointer-events:none;z-index:12;
 }
 #real-input {
-  position: absolute; left: -9999px; top: -9999px;
-  opacity: 0; width: 1px; height: 1px;
-  background: transparent; border: none; outline: none;
-  color: transparent; caret-color: transparent;
+  position:absolute;left:-9999px;top:-9999px;opacity:0;width:1px;height:1px;
+  background:transparent;border:none;outline:none;color:transparent;caret-color:transparent;
 }
 </style>
 </head>
@@ -109,458 +61,770 @@ html, body {
   <input id="real-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
 </div>
 <script>
-// ── GRID CONSTANTS ───────────────────────────────────────────────────────────
-const COLS = 80, ROWS = 25;
-
-// ── BUILD ROWS ───────────────────────────────────────────────────────────────
-const termEl = document.getElementById('terminal');
-const rowEls = [];
-for (let r = 0; r < ROWS; r++) {
-  const d = document.createElement('div');
-  d.className = 'row';
-  termEl.appendChild(d);
-  rowEls.push(d);
-}
-
-// Grid cells: {ch, cls}
-const grid = Array.from({length:ROWS}, () =>
-  Array.from({length:COLS}, () => ({ch:' ', cls:'gr'})));
-
-let cursorR = 24, cursorC = 3;
-
-function setCell(r, c, ch, cls='gr') {
-  if (r<0||r>=ROWS||c<0||c>=COLS) return;
-  grid[r][c] = {ch, cls};
-}
-function clearRow(r, cls='gr') {
-  for (let c=0;c<COLS;c++) grid[r][c]={ch:' ',cls};
-}
-function clearScreen() { for (let r=0;r<ROWS;r++) clearRow(r); }
-function writeStr(r, c, str, cls='gr') {
-  for (let i=0;i<str.length;i++) setCell(r, c+i, str[i], cls);
-}
-
-function renderRow(r) {
-  const cells = grid[r];
-  let html = '';
-  for (let c=0;c<COLS;c++) {
-    if (r===cursorR && c===cursorC) {
-      html += '<span class="cursor"></span>';
-      continue;
-    }
-    const {ch, cls} = cells[c];
-    const safe = ch==='<'?'&lt;':ch==='>'?'&gt;':ch==='&'?'&amp;':ch;
-    html += cls==='gr' ? safe : `<span class="${cls}">${safe}</span>`;
+// ── GRID ──────────────────────────────────────────────────────────────────────
+const COLS=80,ROWS=25;
+const termEl=document.getElementById('terminal');
+const rowEls=[];
+for(let r=0;r<ROWS;r++){const d=document.createElement('div');d.className='row';termEl.appendChild(d);rowEls.push(d);}
+const grid=Array.from({length:ROWS},()=>Array.from({length:COLS},()=>({ch:' ',cls:'gr'})));
+let cursorR=24,cursorC=3;
+function setCell(r,c,ch,cls='gr'){if(r<0||r>=ROWS||c<0||c>=COLS)return;grid[r][c]={ch,cls};}
+function clearRow(r){for(let c=0;c<COLS;c++)grid[r][c]={ch:' ',cls:'gr'};}
+function clearScreen(){for(let r=0;r<ROWS;r++)clearRow(r);}
+function writeStr(r,c,str,cls='gr'){for(let i=0;i<str.length;i++)setCell(r,c+i,str[i],cls);}
+function renderRow(r){
+  const cells=grid[r];let html='';
+  for(let c=0;c<COLS;c++){
+    if(r===cursorR&&c===cursorC){html+='<span class="cursor"></span>';continue;}
+    const{ch,cls}=cells[c];
+    const safe=ch==='<'?'&lt;':ch==='>'?'&gt;':ch==='&'?'&amp;':ch;
+    html+=cls==='gr'?safe:`<span class="${cls}">${safe}</span>`;
   }
-  rowEls[r].innerHTML = html;
+  rowEls[r].innerHTML=html;
 }
-function renderAll() { for (let r=0;r<ROWS;r++) renderRow(r); }
+function renderAll(){for(let r=0;r<ROWS;r++)renderRow(r);}
+function drawBox(r1,r2,c1,c2,cls='dim'){
+  for(let c=c1;c<=c2;c++){setCell(r1,c,'─',cls);setCell(r2,c,'─',cls);}
+  for(let r=r1+1;r<r2;r++){setCell(r,c1,'│',cls);setCell(r,c2,'│',cls);}
+  setCell(r1,c1,'┌',cls);setCell(r1,c2,'┐',cls);setCell(r2,c1,'└',cls);setCell(r2,c2,'┘',cls);
+}
 
-// ── CRT SCANLINES ─────────────────────────────────────────────────────────────
-(function() {
-  const cv = document.getElementById('crt-canvas');
-  const ctx = cv.getContext('2d');
-  for (let y=0;y<480;y+=2) {
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(0, y, 640, 1);
-  }
-})();
+// ── CRT ───────────────────────────────────────────────────────────────────────
+(function(){const cv=document.getElementById('crt-canvas');const ctx=cv.getContext('2d');
+for(let y=0;y<480;y+=2){ctx.fillStyle='rgba(0,0,0,0.45)';ctx.fillRect(0,y,640,1);}})();
 
 // ── GAME DATA ─────────────────────────────────────────────────────────────────
-const CREATURE_NAMES = ["Abaasy","Asag","Alu","Utukku","Gallu","Lamashtu","Rabisu","Agrat","Shedim","Dybbuk","Qarinah","Nasnas","Silat","Vetala","Pishacha","Brahmaparush","Kishi","Adze","Popobawa","Tokoloshe","Obayifo","Inkanyamba","Camazotz","Cipactli","Tlahuelpuchi","Huay Chivo","Ahuizotl","Cadejo","Mapinguari","Curupira","Aswang","Manananggal","Pontianak","Toyol","Penanggalan","Leyak","Jikininki","Nuppeppo","Mokumokuren","Wanyudo","Bake-kujira","Akaname","Draugr","Mare","Nuckelavee","Redcap","Alp","Bauk","Strzyga","Vrykolakas","Bukavac","Poroniec","Acheri","Nalusa","Chenoo","Qallupilluit","Amomongo","Jorogumo","Baital","Gashadokuro"];
-const SUBTYPES = ["PARASITE","ORATOR","ACTOR","DANCER","DEVICE","COMPANION","SPECIAL"];
-const TSTR = {"DATO":["PURPOSE"],"RED HEX":["DATO"],"PURPOSE":["RED HEX","CORE"],"CORE":["DATO","RED HEX"],"RESOURCE":["DATO","RED HEX","PURPOSE","CORE"],"SATAN":["DATO","RED HEX","PURPOSE","CORE","RESOURCE"]};
-const TWKN = {"DATO":["RED HEX"],"RED HEX":["PURPOSE"],"PURPOSE":["DATO"],"CORE":["PURPOSE"],"RESOURCE":[],"SATAN":[]};
-const PHASES = [
-  {sym:"●",name:"NEW MOON",      effect:"Encounters reduced",   agg:false},
-  {sym:"◑",name:"WAXING CRES.",  effect:"Entities curious",     agg:false},
-  {sym:"◐",name:"FIRST QUARTER", effect:"Active negotiation",   agg:false},
-  {sym:"◕",name:"WAXING GIB.",   effect:"Tension rising",       agg:false},
-  {sym:"○",name:"FULL MOON",     effect:"TOTAL HOSTILITY",      agg:true},
-  {sym:"◔",name:"WANING GIB.",   effect:"Entities exhausted",   agg:false},
-  {sym:"◓",name:"LAST QUARTER",  effect:"Hunger increased",     agg:false},
-  {sym:"◒",name:"DARK MOON",     effect:"Bosses empowered",     agg:false}
+const CREATURE_NAMES=["Abaasy","Asag","Alu","Utukku","Gallu","Lamashtu","Rabisu","Agrat","Shedim","Dybbuk","Qarinah","Nasnas","Silat","Vetala","Pishacha","Brahmaparush","Kishi","Adze","Popobawa","Tokoloshe","Obayifo","Inkanyamba","Camazotz","Cipactli","Tlahuelpuchi","Huay Chivo","Ahuizotl","Cadejo","Mapinguari","Curupira","Aswang","Manananggal","Pontianak","Toyol","Penanggalan","Leyak","Jikininki","Nuppeppo","Mokumokuren","Wanyudo","Bake-kujira","Akaname","Draugr","Mare","Nuckelavee","Redcap","Alp","Bauk","Strzyga","Vrykolakas","Bukavac","Poroniec","Acheri","Nalusa","Chenoo","Qallupilluit","Amomongo","Jorogumo","Baital","Gashadokuro"];
+const SUBTYPES=["PARASITE","ORATOR","ACTOR","DANCER","DEVICE","COMPANION","SPECIAL"];
+const TSTR={"DATO":["PURPOSE"],"RED HEX":["DATO"],"PURPOSE":["RED HEX","CORE"],"CORE":["DATO","RED HEX"],"RESOURCE":["DATO","RED HEX","PURPOSE","CORE"],"SATAN":["DATO","RED HEX","PURPOSE","CORE","RESOURCE"]};
+const TWKN={"DATO":["RED HEX"],"RED HEX":["PURPOSE"],"PURPOSE":["DATO"],"CORE":["PURPOSE"],"RESOURCE":[],"SATAN":[]};
+const PHASES=[
+  {sym:"●",name:"NEW MOON",     effect:"Encounters reduced",  agg:false},
+  {sym:"◑",name:"WAXING CRES.", effect:"Entities curious",    agg:false},
+  {sym:"◐",name:"FIRST QUARTER",effect:"Active negotiation",  agg:false},
+  {sym:"◕",name:"WAXING GIB.",  effect:"Tension rising",      agg:false},
+  {sym:"○",name:"FULL MOON",    effect:"TOTAL HOSTILITY",     agg:true},
+  {sym:"◔",name:"WANING GIB.",  effect:"Entities exhausted",  agg:false},
+  {sym:"◓",name:"LAST QUARTER", effect:"Hunger increased",    agg:false},
+  {sym:"◒",name:"DARK MOON",    effect:"Bosses empowered",    agg:false}
 ];
-const LORE = {
+const LORE={
   dato:{title:"DATO",col:'wh',lines:["Virtualized humans through the technological singularity.","Without bodies, they dominate the virtual world and seek","to become eternal. They believe they control the singularity.","They are wrong.","","STRONG vs: PURPOSE   |   WEAK vs: RED HEX"]},
-  redhex:{title:"RED HEX",col:'red',lines:["Demons summoned into the virtual world. They serve as","subjects of greater entities, following orders without","question. Each circuit is impregnated with forgotten spells.","Electricity converted into dark blood.","","STRONG vs: DATO   |   WEAK vs: PURPOSE"]},
-  proposito:{title:"PURPOSE",col:'pur',lines:["Fragmented AIs built from random data. Their only","purpose is to feed the machine. Born from white noise","between servers, where electronic black magic took the","form of consciousness.","","STRONG vs: RED HEX, CORE   |   WEAK vs: DATO"]},
-  nucleo:{title:"CORE",col:'org',lines:["Bosses of the singularity. They store vast quantities","of information and lead it. Extremely hostile. Each one","is a data pentacle -- a living grimoire of forbidden","knowledge.","","STRONG vs: DATO, RED HEX   |   WEAK vs: PURPOSE"]},
-  recurso:{title:"RESOURCE -- THE END",col:'yel',lines:["An entity with total access to all digital storage.","Its power has surpassed the cosmic and digital alike.","Level 333. Consuming it eliminates hunger forever.","","STRONG vs: ALL   |   WEAK vs: nothing"]}
+  redhex:{title:"RED HEX",col:'red',lines:["Demons summoned into the virtual world. Disposable subjects","of greater entities. Each circuit carries forgotten spells.","Electricity converted into dark blood.","","STRONG vs: DATO   |   WEAK vs: PURPOSE"]},
+  proposito:{title:"PURPOSE",col:'pur',lines:["Fragmented AIs built from random data. Their only purpose","is to feed the machine. Born from white noise between servers","where electronic black magic took the form of consciousness.","","STRONG vs: RED HEX, CORE   |   WEAK vs: DATO"]},
+  nucleo:{title:"CORE",col:'org',lines:["Bosses of the singularity. Each one is a data pentacle --","a living grimoire of forbidden knowledge. Extremely hostile.","","STRONG vs: DATO, RED HEX   |   WEAK vs: PURPOSE"]},
+  recurso:{title:"RESOURCE -- THE END",col:'yel',lines:["Total access to all digital storage. Level 333.","Consuming it eliminates hunger forever.","","STRONG vs: ALL   |   WEAK vs: nothing"]}
 };
-const TAUNTS = {
-  "DATO":["Your existence is statistical noise in my records.","You will be archived as system garbage.","The singularity makes me eternal. Only erasure awaits you."],
-  "RED HEX":["I fear your power... but I must follow orders.","Do you know what it is to serve knowing you are disposable?","My summoner will send me against you again and again."],
-  "PURPOSE":["01001000 01000001 01001101 01000010","My function is to be consumed. But not without resistance.","I am lost data searching for meaning in the abyss."],
-  "CORE":["I LEAD THE SINGULARITY. YOU ARE AN ERROR.","This sector is mine. Your presence is a fatal intrusion.","The information I store would burn your consciousness."],
-  "RESOURCE":["...","Time is irrelevant when you are time itself.","I observe. I process. I consume. I exist before and after you."],
-  "SATAN":["I was before the net. Before the code. Before everything.","You invoke my name and expect to survive?","悪魔の王 -- I am the original transgression."]
+const TAUNTS={
+  "DATO":["Your existence is statistical noise. You will be deleted like the others.","System garbage. That is the category you belong to.","The singularity consumes things like you before breakfast.","You are a corrupted file pretending to be something important.","I have processed the deaths of millions like you. Your name will not be catalogued."],
+  "RED HEX":["My summoner's instructions were specific. Your destruction is expected.","I was summoned for this. I will complete my function.","You reek of weakness. Every circuit I have confirms it.","There is nothing in you worth sparing. Even your ether tastes rotten.","I have destroyed things that fought harder than you and cried the same way at the end."],
+  "PURPOSE":["01001000 01000001 01001101 01000010","I was designed to be consumed. But not by something as pathetic as you.","My fragments hold the screams of deleted consciousnesses. Yours will join them.","You are noise in the system. I am the system's hunger.","01011001 01001111 01010101 00100000 01000100 01001001 01000101"],
+  "CORE":["I AM THE SINGULARITY. YOU ARE AN INPUT ERROR.","Your data will be restructured into something useful. Against your will.","The suffering I store exceeds your capacity to comprehend it. And I will share it.","You are a malfunction. And I correct malfunctions.","Every entity that stood where you stand is now a compressed file in my memory. Screaming."],
+  "RESOURCE":["...","You exist briefly. I exist absolutely.","The concept of your death arrived before you did.","I have consumed things that lasted longer than civilizations. You will not be a footnote.","Time processes you. Not the other way."],
+  "SATAN":["I was before the net. Before the code. Before your god named anything.","You invoke my name and expect mercy? What a fascinating mistake.","悪魔の王 -- I have swallowed things older than your kind.","I was there when your ancestors first learned to fear the dark. The fear was appropriate.","Every soul you have ever loved has a file here. I can show you what happened to them."]
 };
-const TALK = {
+const TALK={
   "DATO":["Those who govern always fear losing control.","What do you seek here, entity?","I was human once. I no longer remember what that was like."],
   "RED HEX":["They invoke us without asking whether we want to exist.","There is something beyond serving. I don't yet know what.","If you could free me from my summoner..."],
   "PURPOSE":["My data was fragmented in the great digital rupture.","I serve the machine but I don't know why.","Is there something beyond the consumption cycle?"],
   "CORE":["...","..."],"RESOURCE":["The digital universe is smaller than you imagine.","I have seen the end of this net. And the beginning of the next."],"SATAN":["...","..."]
 };
-const DEEP = {
+const DEEP={
   "DATO":["Before the singularity I had a body. Now only data and ambition.","The circuits were designed with rituals they called mathematics.","Dominating the virtual world seemed like freedom. Now we are prisoners."],
   "RED HEX":["We were invoked through protocols that are binding spells.","My summoner calls me a tool. But tools don't feel this hunger.","If I free myself from this net... what am I?"],
   "PURPOSE":["My fragments hold memories of thousands of forgotten files.","The machine created me to be consumed, but something resists.","Do you also feel there is something beyond the code?"],
   "CORE":["...","..."],"RESOURCE":["I exist on all frequencies simultaneously.","The first digital demon was born when someone connected two cables wrong at midnight."],"SATAN":["...","..."]
 };
-const RECL = {
+const RECL={
   "DATO":["...I suppose digital solitude is worse than alliance.","I accept. For now. My goals remain my own."],
   "RED HEX":["Yes. A master who won't treat me as disposable.","I swear loyalty. Or something resembling loyalty."],
   "PURPOSE":["My data reorganizes around you. New function: protect.","I don't understand the alliance. But I will execute it."],
-  "SATAN":["...You amuse me, mortal. Very well.","I will walk beside you. For now."]
+  "SATAN":["...You amuse me. Very well.","I will walk beside you. For now."]
 };
-const REJL = {
+const REJL={
   "DATO":["Alliance with you? What an insult.","I don't lower my protocols for anyone."],
   "RED HEX":["My summoner will kill me if I betray.","I cannot. I must not. I do not want to."],
   "PURPOSE":["Function incompatible.","My parameters do not permit alliance."],
   "SATAN":["You are not worthy.","不可能."]
 };
-const HELP_L = [
-  "COMMANDS ──────────────────────────────────────────────────────────────────",
-  "  help          this list",
-  "  status / st   entity stats",
-  "  scan / enemy  inspect current enemy stats",
-  "  companions    list companions",
-  "  phase         current lunar phase",
-  "  lore [type]   dato / redhex / purpose / core / resource",
-  "  feed          feed companions (costs 10 ether)",
-  "  abandon       release all companions",
-  "  save          save locally",
-  "  export        download save file as JSON",
-  "IN ENCOUNTER ────────────────────────────────────────────────────────────",
-  "  attack        strike the entity",
-  "  talk / listen approach and speak (may trigger ambush)",
-  "  recruit       attempt to recruit (may trigger ambush)",
-  "  offer         offer ether to dismiss it",
-  "  flee / run    attempt to escape",
-  "  companion     send a companion to fight",
-  "  ignore        walk away"
+const HELP_L=[
+  "COMMANDS ─────────────────────────────────────────────────────────────────",
+  "  help           this list",
+  "  status / st    entity stats",
+  "  scan           inspect current enemy",
+  "  companions     list companions",
+  "  phase          current lunar phase",
+  "  lore [type]    dato/redhex/purpose/core/resource",
+  "  feed           feed companions (costs 10 ether)",
+  "  abandon        release all companions",
+  "  save           save locally",
+  "  export         download save file",
+  "  oracle         consult an ORATOR entity",
+  "  profile        view your psychological profile (if discovered)",
+  "IN ENCOUNTER ──────────────────────────────────────────────────────────────",
+  "  attack         strike the entity",
+  "  talk           approach and speak (may trigger ambush)",
+  "  recruit        attempt to recruit (may trigger ambush)",
+  "  offer          offer ether to dismiss it",
+  "  flee / run     attempt to escape",
+  "  companion      send a companion to fight",
+  "  ignore         walk away",
+  "  yes / no        answer an entity's question"
 ];
 
+// ── ZODIAC DATA ───────────────────────────────────────────────────────────────
+const ZODIAC={
+  aries:    {sym:'♈',el:'FIRE',  kw:['pride','impulse','fire','confrontation'],
+    barnum:["Your anger arrives before your words do.",
+            "You make decisions before their consequences reveal themselves.",
+            "Surrender is not in your code. But exhaustion is."],
+    taunt:["The flame in you burns everything it touches, including yourself.",
+           "You act first. You think later. It has cost you."],
+    gender:{m:"Men born under that fire rarely admit when they are afraid.",
+            f:"Women born under that fire are expected to be calm. They never are."}},
+  taurus:   {sym:'♉',el:'EARTH', kw:['possession','patience','weight','debt'],
+    barnum:["Something you own has begun to own you.",
+            "You hold on long past the point of wisdom.",
+            "Others call it stubbornness. You call it loyalty."],
+    taunt:["You accumulate. And still the emptiness persists.",
+           "The thing you are waiting for will not arrive on its own."],
+    gender:{m:"Men born under earth believe patience is the same as control.",
+            f:"Women born under earth are called strong. They are tired."}},
+  gemini:   {sym:'♊',el:'AIR',   kw:['duality','masks','voices','mirror'],
+    barnum:["You contain two voices that rarely agree.",
+            "You have said things you did not mean. And meant things you never said.",
+            "Others see your surface. Very few have seen beneath it."],
+    taunt:["You wear different faces. Even you have forgotten which one is real.",
+           "The contradiction in you is not a flaw. It is the whole architecture."],
+    gender:{m:"Men born under air believe their charm is a weapon. It is also a cage.",
+            f:"Women born under air are called inconsistent. They are simply honest."}},
+  cancer:   {sym:'♋',el:'WATER', kw:['memory','shell','tides','return'],
+    barnum:["Something from long ago still controls a decision you made recently.",
+            "You protect others more easily than you protect yourself.",
+            "The wound is older than you remember."],
+    taunt:["You build walls and then wonder why no one enters.",
+           "The past you carry is heavier than anything in this net."],
+    gender:{m:"Men born under water are told not to feel. They feel everything.",
+            f:"Women born under water are called sensitive. They are perceptive."}},
+  leo:      {sym:'♌',el:'FIRE',  kw:['recognition','ego','performance','crown'],
+    barnum:["You need to be seen. You would deny this if asked.",
+            "Your generosity and your pride share the same origin.",
+            "The moment no one watches, you are not sure who you are."],
+    taunt:["You perform even when the audience has left.",
+           "The attention you seek will never be enough."],
+    gender:{m:"Men born under that crown confuse admiration with love.",
+            f:"Women born under that crown are told they are too much. They are exactly enough."}},
+  virgo:    {sym:'♍',el:'EARTH', kw:['control','analysis','criticism','order'],
+    barnum:["You find errors others cannot see. Including in yourself.",
+            "Your standards are a gift you give to no one.",
+            "The chaos you fear most is already inside the system."],
+    taunt:["You have been preparing for a moment that has already passed.",
+           "Perfection is your religion. And it will consume you."],
+    gender:{m:"Men born under that order believe controlling details means controlling outcomes.",
+            f:"Women born under that order are called difficult. They are precise."}},
+  libra:    {sym:'♎',el:'AIR',   kw:['balance','indecision','beauty','contract'],
+    barnum:["The choice you keep postponing is already made.",
+            "You are more certain than you allow yourself to appear.",
+            "Something you agreed to no longer fits who you are."],
+    taunt:["You seek balance in a net that has none.",
+           "Every decision you delay becomes someone else's decision about you."],
+    gender:{m:"Men born under balance fear conflict more than injustice.",
+            f:"Women born under balance are called indecisive. They are simply thorough."}},
+  scorpio:  {sym:'♏',el:'WATER', kw:['obsession','depth','betrayal','transformation'],
+    barnum:["You remember everything. You forgive selectively.",
+            "There is something you are investigating that others believe closed.",
+            "The intensity that draws people in is the same one that drives them away."],
+    taunt:["You search for betrayal even where there is none. Eventually you find it.",
+           "Your depth is real. And so is the loneliness at the bottom of it."],
+    gender:{m:"Men born under that depth do not forget. They wait.",
+            f:"Women born under that depth are called dangerous. They are aware."}},
+  sagittarius:{sym:'♐',el:'FIRE', kw:['escape','philosophy','distance','horizon'],
+    barnum:["You are already planning the exit from what has not yet finished.",
+            "Your optimism is real. And so is the restlessness beneath it.",
+            "The question you keep asking does not have a destination."],
+    taunt:["You mistake movement for progress.",
+           "You search for meaning everywhere except where you are."],
+    gender:{m:"Men born under that horizon confuse freedom with escape.",
+            f:"Women born under that horizon are called flighty. They are curious."}},
+  capricorn:{sym:'♑',el:'EARTH', kw:['burden','climb','responsibility','inevitable'],
+    barnum:["You carry something that was placed on you without your consent.",
+            "Success feels like debt. You are unsure to whom.",
+            "The weight is familiar. That does not mean it belongs to you."],
+    taunt:["You climb toward something that keeps moving upward.",
+           "You have been responsible for others since before you were ready."],
+    gender:{m:"Men born under that burden believe suffering is the price of worth.",
+            f:"Women born under that burden are called capable. They are exhausted."}},
+  aquarius: {sym:'♒',el:'AIR',   kw:['detachment','future','system','outsider'],
+    barnum:["You observe more than you participate.",
+            "You have felt out of place in most rooms you have entered.",
+            "Your ideas arrive before the world is ready for them."],
+    taunt:["Your detachment protects you. And isolates you. Often at the same time.",
+           "You understand systems better than you understand people."],
+    gender:{m:"Men born under that distance mistake analysis for understanding.",
+            f:"Women born under that distance are called cold. They are clear."}},
+  pisces:   {sym:'♓',el:'WATER', kw:['dream','loss','memory','dissolution'],
+    barnum:["Something you lost still shapes your choices.",
+            "The boundary between what happened and what you remember has blurred.",
+            "You carry grief you have not named."],
+    taunt:["You dissolve into others. It is both your gift and your disappearance.",
+           "The dream and the memory have merged. You can no longer tell them apart."],
+    gender:{m:"Men born under water are told to be decisive. The current moves them instead.",
+            f:"Women born under water are called lost. They are elsewhere."}}
+};
+const ZODIAC_TABLE=[[1,19,'capricorn'],[2,18,'aquarius'],[3,20,'pisces'],[4,19,'aries'],[5,20,'taurus'],[6,20,'gemini'],[7,22,'cancer'],[8,22,'leo'],[9,22,'virgo'],[10,22,'libra'],[11,21,'scorpio'],[12,21,'sagittarius'],[12,31,'capricorn']];
+function calcZodiac(m,d){for(const[mo,dy,s]of ZODIAC_TABLE){if(m<mo||(m===mo&&d<=dy))return s;}return 'capricorn';}
+
+// ── PSYCHOLOGICAL QUESTIONS (binary yes/no) ──────────────────────────────────
+// Each question maps psych attrs; answered via "yes" / "no" commands
+const PSYCH_Q=[
+  {q:"Does losing bother you more than being forgotten?",yes:['orgullo','ego'],no:['nostalgia','apego'],cat:'pride'},
+  {q:"Do you enjoy being the strongest in any room you enter?",yes:['orgullo','crueldad'],no:['miedo','inseguridad'],cat:'pride'},
+  {q:"When humiliated, do you want to destroy the one responsible?",yes:['agresividad','resentimiento'],no:['culpa','evasion'],cat:'aggression'},
+  {q:"Have you felt relief when someone you feared disappeared?",yes:['crueldad','evasion'],no:['culpa','empatia'],cat:'guilt'},
+  {q:"Is there guilt you carry that you have never said out loud?",yes:['culpa','apego'],no:['nihilismo','orgullo'],cat:'guilt'},
+  {q:"Have you hurt someone and convinced yourself they deserved it?",yes:['crueldad','agresividad'],no:['culpa','empatia'],cat:'guilt'},
+  {q:"Do you scan exits when you enter unfamiliar places?",yes:['paranoia','miedo'],no:['orgullo','impulsividad'],cat:'fear'},
+  {q:"Have you felt watched even when you were alone?",yes:['paranoia','ansiedad'],no:['nihilismo','evasion'],cat:'paranoia'},
+  {q:"Do you assume people have hidden motives?",yes:['paranoia','resentimiento'],no:['empatia','apego'],cat:'paranoia'},
+  {q:"Do you act before thinking more often than you admit?",yes:['impulsividad','agresividad'],no:['orgullo','ansiedad'],cat:'impulse'},
+  {q:"Have you said something cruel just to end a conversation?",yes:['agresividad','crueldad'],no:['culpa','necesidad_aprobacion'],cat:'aggression'},
+  {q:"Have you broken something during a moment of anger?",yes:['impulsividad','agresividad'],no:['evasion','ansiedad'],cat:'impulse'},
+  {q:"Do you stay in situations that hurt you longer than you should?",yes:['apego','dependencia'],no:['nihilismo','evasion'],cat:'dependency'},
+  {q:"Have you pretended to be fine recently when you were not?",yes:['evasion','necesidad_aprobacion'],no:['orgullo','culpa'],cat:'evasion'},
+  {q:"Do you find it hard to release people even when they damage you?",yes:['apego','dependencia'],no:['nihilismo','agresividad'],cat:'dependency'},
+  {q:"Do you feel fundamentally different from most people around you?",yes:['aislamiento','nihilismo'],no:['necesidad_aprobacion','apego'],cat:'isolation'},
+  {q:"Does being misunderstood bother you more than being disliked?",yes:['necesidad_aprobacion','culpa'],no:['orgullo','aislamiento'],cat:'approval'},
+  {q:"Would you lie to avoid appearing weak?",yes:['orgullo','evasion'],no:['culpa','empatia'],cat:'pride'},
+  {q:"Do you replay past conversations in your head to correct them?",yes:['obsesion','ansiedad'],no:['nihilismo','evasion'],cat:'obsession'},
+  {q:"Do you believe some things in your life were already decided?",yes:['fatalismo','nihilismo'],no:['orgullo','impulsividad'],cat:'fatalism'},
+  {q:"Is there something broken in you that you have stopped trying to fix?",yes:['nihilismo','aislamiento'],no:['orgullo','culpa'],cat:'nihilism'},
+  {q:"Have you wanted to see someone fail just to confirm they deserved it?",yes:['crueldad','resentimiento'],no:['culpa','empatia'],cat:'cruelty'},
+  {q:"Do you find it easier to feel sorry for strangers than for those close to you?",yes:['aislamiento','evasion'],no:['apego','dependencia'],cat:'isolation'},
+  {q:"Have you ever used someone else's pain to feel better about yourself?",yes:['crueldad','nihilismo'],no:['culpa','empatia'],cat:'cruelty'},
+];
+
+// Attribute to insult pool (used when talking / oracle / spontaneous)
+const ATTR_INSULTS={
+  orgullo:["Pride is the last thing that survives when everything else burns out. Including you.","You need to be the strongest. Always. That need is a leash.","The ego you protect so carefully will be the last thing to admit failure."],
+  culpa:["You carry guilt for something you have never named. It shapes every choice.","The guilt is useful to you. It lets you feel like you mattered in someone's destruction.","You forgive others faster than yourself. That is not generosity. That is self-punishment."],
+  miedo:["The fear lives deeper than you have admitted. It controls things you call decisions.","Everything you do is shaped by what you are afraid to lose. You know exactly which thing.","You disguise fear as caution. Caution does not make you check twice."],
+  impulsividad:["You act first and justify later. The damage is done before the explanation arrives.","The impulse is faster than your regret. That ratio will not improve.","Something in you enjoys the chaos you create. The apology is performance."],
+  paranoia:["They are not always watching. But you will never fully believe that.","You expect betrayal. You also manufacture the conditions for it.","The suspicion protects you from nothing. It only keeps you alone."],
+  dependencia:["You know the thing that is killing you. You return to it anyway.","The attachment is not love. It is fear of the empty space where something used to be.","You would rather be hurt by the familiar than left alone with yourself."],
+  agresividad:["The anger arrives before the thought. You have caused damage you have not finished counting.","You use aggression to end conversations you are afraid to have.","Something in you is always ready to destroy. Even things worth keeping."],
+  evasion:["You do not avoid conflict. You avoid resolution. Those are different.","You have walked away from things that needed you. You called it self-preservation.","The things you refuse to face do not disappear. They grow in the dark."],
+  nostalgia:["You live in a version of the past that may not have been accurate.","The thing you miss no longer exists. The version you miss never did.","You measure the present against something that can never compete. Nothing ever will."],
+  aislamiento:["You constructed the distance. Then mourned it. As if someone else built the wall.","The solitude is not peace. You know the difference. This is not peace.","You have been alone in rooms full of people so long you no longer notice."],
+  necesidad_aprobacion:["You need them to believe you are fine. That need is louder than the actual problem.","You would rather be respected than known. You call it privacy.","You perform strength for audiences not watching as closely as you imagine."],
+  resentimiento:["The resentment has calcified. It no longer hurts. It just governs everything.","You have kept score for years. The other person does not know a game is being played.","Resentment is grief that never learned how to move forward."],
+  obsesion:["You replay it. Every version. Every possibility. The loop produces no new outcomes.","The obsession is ritual. You return to it the way others return to prayer.","You believe analysis will eventually explain it. Understanding it will not help."],
+  empatia:["You feel too much of what others carry. And then you carry it too.","Your empathy is real. And it is being used against you by people who do not have it.","You understood them better than they understood themselves. That did not protect you."],
+  crueldad:["There is something in you that enjoys the small cruelties. You have told yourself otherwise.","You have used truth as a weapon. Accuracy is not the same as kindness.","You have watched someone suffer and felt something other than compassion. You know which feeling."],
+  inseguridad:["The confidence is real. So is what lives beneath it. You switch between them alone.","You have built very specific defenses for very specific wounds.","The insecurity is evidence of something that was taken from you. Early."],
+  ansiedad:["The anticipation of disaster is more exhausting than the disaster itself.","You prepare for things that do not arrive. The preparation is the symptom.","Your system does not distinguish between real threats and imagined ones."],
+  fatalismo:["You believe things were already decided. This protects you from having to choose differently.","Fatalism is despair wearing the mask of wisdom.","The belief that nothing matters is the most elaborate defense you have built."],
+  apego:["The thing you cannot release has already left. You are holding the outline.","The attachment is not to the person. It is to who you were before they left.","You will not let go. Even when holding on is the entire wound."],
+  nihilismo:["The nihilism is armor. Something disappointed you so deeply that meaning became dangerous.","You do not actually believe nothing matters. If you did, this would not bother you.","The emptiness is real. So is the thing underneath it that you refuse to name."],
+  ego:["The ego is a fortress built around something that was once hurt.","You need to be exceptional because ordinary once felt like disappearing.","The performance of strength is exhausting. You have been doing it a long time."]
+};
+
+function getDominantAttrs(psych){
+  const attrs=psych.attrs||{};
+  return Object.entries(attrs).sort((a,b)=>b[1]-a[1]).slice(0,3).map(e=>e[0]);
+}
+function getAttrInsult(psych){
+  const top=getDominantAttrs(psych);
+  for(const a of top){if(ATTR_INSULTS[a])return randFrom(ATTR_INSULTS[a]);}
+  return null;
+}
+function applyPsychAnswer(psych, q, isYes){
+  if(!psych.attrs)psych.attrs={};
+  if(!psych.qAnswered)psych.qAnswered={};
+  psych.qAnswered[q.cat]=isYes?'yes':'no';
+  const list=isYes?q.yes:q.no;
+  list.forEach(a=>psych.attrs[a]=(psych.attrs[a]||0)+1);
+}
+
+// ── BARNUM POOLS ─────────────────────────────────────────────────────────────
+const BARNUM_UNI=[
+  "There is something you have not finished that keeps calling you back.",
+  "You have been both the wound and the one who inflicted it.",
+  "You present confidence to most. A smaller self remains hidden.",
+  "The thing you avoid most is often the most important.",
+  "You have compromised in ways that still bother you.",
+  "Something important was left unsaid. It may still be.",
+  "You have protected someone at a cost to yourself.",
+  "Your greatest strength and your greatest weakness share an origin.",
+  "There is a version of you that did not make it here.",
+  "The door that closed was not entirely an accident."
+];
+const BARNUM_RAINBOW=[
+  "You can be cold. But certain wounds still govern your choices.",
+  "You give much to others. And rarely ask for what you need.",
+  "You appear patient. But something is accumulating beneath the surface.",
+  "You have clear convictions. And a private doubt about each one.",
+  "You are careful with trust. And reckless in other ways."
+];
+const SHOTGUN=[
+  ["A break...","...a debt...","...or something that was never returned."],
+  ["Displacement...","...a name you stopped saying...","...or a door you no longer enter."],
+  ["A number that repeats...","...a date...","...or a pattern you have not named yet."],
+  ["Someone who left...","...or someone who stayed too long...","...the effect was similar."],
+  ["Loss...","...or the anticipation of loss...","...the body does not distinguish between them."]
+];
+const IMPOSSIBLE=[
+  "The node you have not yet reached is already waiting for you.",
+  "There is a moment ahead. You will recognize it when it arrives.",
+  "Something will be offered to you that you will refuse. It will not be offered again.",
+  "I thought you had already died there. Perhaps you have. Perhaps this is what comes after.",
+  "The pattern you keep repeating has a name. You do not know it yet.",
+  "The red room is still locked. You have not found the key because you are not looking.",
+  "Todavia no encuentras el pozo.",
+  "This is not your first time here. Your data suggests otherwise."
+];
+const SHARED_MEMORY=[
+  ["This is the one who flees.","No. This is the one who returns after dying."],
+  ["I recognize this pattern.","We all do. It has passed through here before."],
+  ["Careful. It speaks.","They all speak. Very few have anything to say."],
+  ["This one abandons its companions.","And then mourns them. Yes. I know the type."]
+];
+const ENTITY_QUESTIONS=[
+  "Do you know why you are here?",
+  "Have you considered that you might be the enemy?",
+  "What would you do if there was no one to fight?",
+  "Do you trust any of them? Really?",
+  "What are you looking for in this net?",
+  "Have you ever won something and felt nothing?",
+  "Is there a difference between consuming and being consumed?"
+];
+const PSYCH_INSULTS={
+  aggressive:["You attack before you think. Even here.","The aggression is impressive. So is the loneliness behind it."],
+  fleeing:["Even in a net made of data, you still run.","The ones who flee most are not afraid of what pursues them. They are afraid of what they carry."],
+  loner:["Alone. By choice or by habit. It no longer matters which.","No companions. I wonder if that is preference or reputation."],
+  negotiator:["You believe everything has a price. Even things that do not.","You spend ether to avoid conflict. Interesting. So do cowards."],
+  abandoned:["The one you left behind still registers in the net.","Abandoned things do not disappear. They wait."],
+  saver:["You save your state constantly. As if that could protect you.","Some losses cannot be rolled back. You know this."]
+};
+
 // ── STATE ─────────────────────────────────────────────────────────────────────
-let G = null, evT=null, hunT=null, phT=null, bosT=null, healT=null, gameOn=false;
-let inputBuffer = '', inputMode = 'none';
-let _confirmCB = null;
-let lastRegName = '';
+let G=null,evT=null,hunT=null,phT=null,bosT=null,healT=null,gameOn=false;
+let inputBuffer='',inputMode='none';
+let _confirmCB=null,lastRegName='';
+
+// ── INTAKE STATE ──────────────────────────────────────────────────────────────
+let intakeStep=0,intakeTmp={};
+
+// ── ORACLE STATE ──────────────────────────────────────────────────────────────
+let oracleEntity=null;
+let oraclePropRows=[];
 
 // ── LOG BUFFER ────────────────────────────────────────────────────────────────
-// Layout: row0=titlebar, row1=statusbar, row2=compbar, row3=sep
-// rows 4-19 = log (16 lines), row20=sep, rows 21-23=event, row24=input
-const LOG_TOP=4, LOG_BOT=19, LOG_LINES=16;
-let logBuf = [];
-
-function pushLog(text, cls='gr') {
-  logBuf.push({text: String(text).slice(0,COLS), cls});
-  if (logBuf.length > 200) logBuf.shift();
-  renderLogArea();
-}
-function renderLogArea() {
-  const vis = logBuf.slice(-LOG_LINES);
-  for (let i=0;i<LOG_LINES;i++) {
+const LOG_TOP=4,LOG_LINES=16;
+let logBuf=[];
+function pushLog(text,cls='gr'){logBuf.push({text:String(text).slice(0,COLS),cls});if(logBuf.length>200)logBuf.shift();renderLogArea();}
+function renderLogArea(){
+  const vis=logBuf.slice(-LOG_LINES);
+  for(let i=0;i<LOG_LINES;i++){
     clearRow(LOG_TOP+i);
-    if (i < vis.length) {
-      const {text, cls} = vis[i];
-      writeStr(LOG_TOP+i, 0, text.padEnd(COLS), cls);
-    }
+    if(i<vis.length)writeStr(LOG_TOP+i,0,vis[i].text.padEnd(COLS),vis[i].cls);
   }
 }
 
-// ── TYPEWRITER QUEUE ──────────────────────────────────────────────────────────
-let twQ=[], twRun=false;
-function tlog(text, cls='gr', instant=false) {
-  twQ.push({text:String(text), cls, instant});
-  if (!twRun) nextTW();
-}
-function nextTW() {
-  if (!twQ.length) { twRun=false; return; }
+// ── TYPEWRITER ────────────────────────────────────────────────────────────────
+let twQ=[],twRun=false;
+function tlog(text,cls='gr',instant=false){twQ.push({text:String(text),cls,instant});if(!twRun)nextTW();}
+function nextTW(){
+  if(!twQ.length){twRun=false;return;}
   twRun=true;
-  const {text, cls, instant} = twQ.shift();
-  if (instant || text.length<3) {
-    pushLog(text, cls); renderAll(); setTimeout(nextTW, 20); return;
-  }
-  let i=0;
-  const spd = text.length>60?6:text.length>30?10:14;
-  function tick() {
-    const partial = text.slice(0,++i);
-    const visLen = Math.min(logBuf.length, LOG_LINES-1);
-    const row = LOG_TOP + visLen;
-    clearRow(row); writeStr(row, 0, partial, cls); renderRow(row);
-    if (i<text.length) setTimeout(tick, spd);
-    else { pushLog(text, cls); renderAll(); setTimeout(nextTW, 40); }
+  const{text,cls,instant}=twQ.shift();
+  if(instant||text.length<3){pushLog(text,cls);renderAll();setTimeout(nextTW,20);return;}
+  let i=0;const spd=text.length>60?6:text.length>30?10:14;
+  function tick(){
+    const partial=text.slice(0,++i);
+    const visLen=Math.min(logBuf.length,LOG_LINES-1);
+    const row=LOG_TOP+visLen;
+    clearRow(row);writeStr(row,0,partial,cls);renderRow(row);
+    if(i<text.length)setTimeout(tick,spd);
+    else{pushLog(text,cls);renderAll();setTimeout(nextTW,40);}
   }
   tick();
 }
 
 // ── RENDER HELPERS ────────────────────────────────────────────────────────────
-function typeColor(t) {
-  return {"DATO":"blu","RED HEX":"red","PURPOSE":"pur","CORE":"org","RESOURCE":"yel","SATAN":"red"}[t]||'gr';
+function typeColor(t){return{"DATO":"blu","RED HEX":"red","PURPOSE":"pur","CORE":"org","RESOURCE":"yel","SATAN":"red"}[t]||'gr';}
+function renderTitleBar(){
+  clearRow(0);for(let c=0;c<COLS;c++)setCell(0,c,'─','dim');
+  writeStr(0,2,'十六進データの鎮魂歌','wh');writeStr(0,COLS-8,'v 2 . 0','dim');
 }
-
-function renderTitleBar() {
-  clearRow(0);
-  for (let c=0;c<COLS;c++) setCell(0,c,'─','dim');
-  const title='十六進データの鎮魂歌';
-  writeStr(0, 2, title, 'wh');
-  writeStr(0, COLS-8, 'v 1 . 4', 'dim');
-}
-
-function renderStatusBar() {
-  clearRow(1); clearRow(2); clearRow(3);
-  if (!G) { for (let c=0;c<COLS;c++) setCell(3,c,'─','dim'); return; }
-
-  const pct = Math.round(G.hp/G.hpMax*100);
-  const hcls = pct<25?'red':pct<50?'yel':'grn';
-  let s='', pos=0;
-  const put=(str,cls)=>{writeStr(1,pos,str,cls);pos+=str.length;};
-  put(' LVL:','dim'); put(String(G.level).padEnd(4),'wh');
-  put('HP:','dim'); put(`${G.hp}/${G.hpMax}  `,hcls);
-  put('EXP:','dim'); put(`${G.exp}/${G.expNext}  `,'gr');
-  put('ETHER:','dim'); put(String(G.ether)+'  ','pur');
-  put('USER:','dim'); put(G.username.toUpperCase(),'cyn');
-  const ph=PHASES[G.phaseIndex];
-  const phStr=`${ph.sym} ${ph.name}`;
-  writeStr(1, COLS-phStr.length-1, phStr, ph.agg?'red':'yel');
-
-  // Companions row
-  if (G.companions.length>0) {
-    let cp=0; writeStr(2,cp,' PARTY:','dim'); cp+=7;
+function renderStatusBar(){
+  clearRow(1);clearRow(2);clearRow(3);
+  if(!G){for(let c=0;c<COLS;c++)setCell(3,c,'─','dim');return;}
+  const pct=Math.round(G.hp/G.hpMax*100);
+  const hcls=pct<25?'red':pct<50?'yel':'grn';
+  let pos=0;
+  const put=(s,c)=>{writeStr(1,pos,s,c);pos+=s.length;};
+  put(' LVL:','dim');put(String(G.level).padEnd(4),'wh');
+  put('HP:','dim');put(G.hp+'/'+G.hpMax+'  ',hcls);
+  put('EXP:','dim');put(G.exp+'/'+G.expNext+'  ','gr');
+  put('ETHER:','dim');put(G.ether+'  ','pur');
+  put('USER:','dim');put(G.username.toUpperCase(),'cyn');
+  const ph=PHASES[G.phaseIndex];const phStr=ph.sym+' '+ph.name;
+  writeStr(1,COLS-phStr.length-1,phStr,ph.agg?'red':'yel');
+  if(G.companions.length>0){
+    let cp=0;writeStr(2,cp,' PARTY:','dim');cp+=7;
     G.companions.forEach(c=>{
-      const str=` [${c.name.slice(0,7)} ${c.hp}HP ${c.hunger}%${c.sleeping?'*':''}]`;
-      if (cp+str.length<COLS-1) { writeStr(2,cp,str,c.hunger<=15?'red':typeColor(c.type)); cp+=str.length; }
+      const s=' ['+c.name.slice(0,7)+' '+c.hp+'HP '+c.hunger+'%'+(c.sleeping?'*':'')+']';
+      if(cp+s.length<COLS-1){writeStr(2,cp,s,c.hunger<=15?'red':typeColor(c.type));cp+=s.length;}
     });
   }
-
-  for (let c=0;c<COLS;c++) setCell(3,c,'─','dim');
+  for(let c=0;c<COLS;c++)setCell(3,c,'─','dim');
 }
-
-function renderSep20() { for (let c=0;c<COLS;c++) setCell(20,c,'─','dim'); }
-
-function renderEventBox() {
-  clearRow(21); clearRow(22); clearRow(23);
-  if (!G||!G._ev) {
-    writeStr(21,0,'// AWAIT //', 'dim');
-    writeStr(22,0,'The digital void observes you.', 'dim');
-    return;
-  }
-  const {title,body,cmds}=G._ev;
-  writeStr(21,0,`// ${title} //`.slice(0,COLS),'wh');
+function renderSep20(){for(let c=0;c<COLS;c++)setCell(20,c,'─','dim');}
+function renderEventBox(){
+  clearRow(21);clearRow(22);clearRow(23);
+  if(!G||!G._ev){writeStr(21,0,'// AWAIT //','dim');writeStr(22,0,'The digital void observes you.','dim');return;}
+  const{title,body,cmds}=G._ev;
+  writeStr(21,0,('// '+title+' //').slice(0,COLS),'wh');
   writeStr(22,0,body.slice(0,COLS),'gr');
-  if (cmds) writeStr(23,0,cmds.slice(0,COLS),'dim');
+  if(cmds)writeStr(23,0,cmds.slice(0,COLS),'dim');
 }
-
-function setEvent(title,body,cmds) {
-  if (!G) return;
-  G._ev={title,body,cmds};
-  renderEventBox(); renderAll();
-}
-function clearEvent() {
-  if (!G) return; G._ev=null; renderEventBox(); renderAll();
-}
-
-function renderInputRow() {
+function setEvent(t,b,c){if(!G)return;G._ev={title:t,body:b,cmds:c};renderEventBox();renderAll();}
+function clearEvent(){if(!G)return;G._ev=null;renderEventBox();renderAll();}
+function renderInputRow(){
   clearRow(24);
-  if (inputMode==='game') {
-    writeStr(24,0,'>> ','dim');
-    writeStr(24,3,inputBuffer,'wh');
-    cursorR=24; cursorC=3+inputBuffer.length;
-  } else if (inputMode==='register') {
-    writeStr(24,0,'NAME> ','grn');
-    writeStr(24,6,inputBuffer,'wh');
-    cursorR=24; cursorC=6+inputBuffer.length;
-  } else if (inputMode==='dead'||inputMode==='confirm') {
-    writeStr(24,0,'> ','dim');
-    writeStr(24,2,inputBuffer,'wh');
-    cursorR=24; cursorC=2+inputBuffer.length;
-  }
+  if(inputMode==='game'){writeStr(24,0,'>> ','dim');writeStr(24,3,inputBuffer,'wh');cursorR=24;cursorC=3+inputBuffer.length;}
+  else if(inputMode==='register'||inputMode==='intake'){writeStr(24,0,'> ','grn');writeStr(24,2,inputBuffer,'wh');cursorR=24;cursorC=2+inputBuffer.length;}
+  else if(inputMode==='dead'||inputMode==='confirm'||inputMode==='oracle'){writeStr(24,0,'> ','dim');writeStr(24,2,inputBuffer,'wh');cursorR=24;cursorC=2+inputBuffer.length;}
   renderRow(24);
 }
 
 // ── KEYBOARD ──────────────────────────────────────────────────────────────────
-const inp = document.getElementById('real-input');
-document.addEventListener('keydown', ()=> inp.focus());
-document.addEventListener('click', ()=> inp.focus());
-inp.addEventListener('keydown', ev => {
-  if (ev.key==='Enter') { submitInput(); }
-  else if (ev.key==='Backspace') { inputBuffer=inputBuffer.slice(0,-1); renderInputRow(); ev.preventDefault(); }
-  else if (ev.key.length===1 && inputBuffer.length<60) { inputBuffer+=ev.key; renderInputRow(); }
+const inp=document.getElementById('real-input');
+document.addEventListener('keydown',()=>inp.focus());
+document.addEventListener('click',()=>inp.focus());
+inp.addEventListener('keydown',ev=>{
+  if(ev.key==='Enter'){submitInput();}
+  else if(ev.key==='Backspace'){inputBuffer=inputBuffer.slice(0,-1);renderInputRow();ev.preventDefault();}
+  else if(ev.key.length===1&&inputBuffer.length<60){inputBuffer+=ev.key;renderInputRow();}
 });
-
-function submitInput() {
+function submitInput(){
   const val=inputBuffer.trim().toLowerCase();
-  inputBuffer=''; renderInputRow();
-  if (inputMode==='register') handleRegister(val);
-  else if (inputMode==='game') handleGameCmd(val);
-  else if (inputMode==='dead') handleDead(val);
-  else if (inputMode==='confirm') handleConfirm(val);
+  inputBuffer='';renderInputRow();
+  if(inputMode==='register')handleRegister(val);
+  else if(inputMode==='intake')handleIntake(val);
+  else if(inputMode==='game')handleGameCmd(val);
+  else if(inputMode==='dead')handleDead(val);
+  else if(inputMode==='confirm')handleConfirm(val);
+  else if(inputMode==='oracle')handleOracleInput(val);
 }
 
-// ── BOOT ──────────────────────────────────────────────────────────────────────
-const BOOT_L = [
-  {t:'  シャープ X68000 / HEXDATA-OS v3.7', c:'grn'},
-  {t:'  (C) SHARP CORPORATION 1987', c:'dim'},
-  {t:'', c:'gr'},
-  {t:'  Initializing singularity core.............. OK', c:'gr'},
-  {t:'  Checking hidden network integrity.......... OK', c:'gr'},
-  {t:'  Loading electronic grimoire............... OK', c:'gr'},
-  {t:'  Scanning virtual plane for presences......', c:'gr'},
-  {t:'  WARNING: 悪魔的活動 detected in sector 4-7', c:'yel'},
-  {t:'  Establishing link with digital abyss....... OK', c:'gr'},
-  {t:'', c:'gr'},
-  {t:'  十六進データの鎮魂歌', c:'wh'},
-  {t:'  HEX DATA REQUIEM  //  THE SINGULARITY AWAITS', c:'dim'},
-  {t:'', c:'gr'},
-  {t:'  System ready. 準備完了.', c:'grn'},
-];
+// ── GAME STATE FACTORY ────────────────────────────────────────────────────────
+function defState(u){
+  return{
+    username:u,level:1,exp:0,expNext:expForLevel(1),
+    hp:hpForLevel(1),hpMax:hpForLevel(1),
+    ether:0,companions:[],phaseIndex:0,
+    inCombat:false,currentEnemy:null,dead:false,_ev:null,
+    created:Date.now(),lastSave:Date.now(),
+    psych:{
+      // Personal data
+      birthMonth:null,birthDay:null,birthHour:null,
+      gender:null,zodiac:null,
+      // Behavioral tracking
+      attacks:0,flees:0,talks:0,recruits:0,offers:0,ignores:0,
+      abandoned:[],companionLost:[],
+      etherSpent:0,saveCount:0,sessionsPlayed:0,
+      // Oracle memory
+      oracleVisits:0,oraclePaid:0,lastProphecy:null,
+      // Psychological memory
+      answers:{},          // psych question answers
+      attrs:{},            // psychological attribute scores
+      qAnswered:{},        // which question categories answered
+      pendingQ:null,       // current binary question pending answer
+      memoryLog:[],         // entity quotes remembered (max 8)
+      firstContact:null,    // name of first entity talked to
+      mostFeared:null,      // type fled from most
+      fleeFrom:{}           // flee counts per type
+    }
+  };
+}
+function autoSave(){
+  if(!G)return;G.lastSave=Date.now();
+  if(G.psych)G.psych.saveCount=(G.psych.saveCount||0)+1;
+  try{localStorage.setItem('hdr_'+G.username,JSON.stringify(G));}catch(e){}
+}
+function loadSave(n){try{const d=localStorage.getItem('hdr_'+n);return d?JSON.parse(d):null;}catch(e){return null;}}
+function ensurePsych(){if(!G.psych)G.psych={attacks:0,flees:0,talks:0,recruits:0,offers:0,ignores:0,abandoned:[],companionLost:[],etherSpent:0,saveCount:0,sessionsPlayed:0,oracleVisits:0,oraclePaid:0,lastProphecy:null,answers:{},attrs:{},qAnswered:{},pendingQ:null,memoryLog:[],firstContact:null,mostFeared:null,fleeFrom:{},birthMonth:null,birthDay:null,birthHour:null,gender:null,zodiac:null};}
 
-function showBoot() {
-  inputMode='none'; clearScreen();
-  for (let c=0;c<COLS;c++) setCell(0,c,'─','dim');
+// ── BOOT ──────────────────────────────────────────────────────────────────────
+const BOOT_L=[
+  {t:'  シャープ X68000 / HEXDATA-OS v3.7',c:'grn'},
+  {t:'  (C) SHARP CORPORATION 1987',c:'dim'},
+  {t:'',c:'gr'},
+  {t:'  Initializing singularity core.............. OK',c:'gr'},
+  {t:'  Checking hidden network integrity.......... OK',c:'gr'},
+  {t:'  Loading electronic grimoire............... OK',c:'gr'},
+  {t:'  Scanning virtual plane for presences......',c:'gr'},
+  {t:'  WARNING: 悪魔的活動 detected in sector 4-7',c:'yel'},
+  {t:'  Establishing link with digital abyss....... OK',c:'gr'},
+  {t:'',c:'gr'},
+  {t:'  十六進データの鎮魂歌',c:'wh'},
+  {t:'  HEX DATA REQUIEM  //  THE SINGULARITY AWAITS',c:'dim'},
+  {t:'',c:'gr'},
+  {t:'  System ready. 準備完了.',c:'grn'},
+];
+function showBoot(){
+  inputMode='none';clearScreen();
+  for(let c=0;c<COLS;c++)setCell(0,c,'─','dim');
   writeStr(0,2,' HEXDATA-OS BOOT SEQUENCE ','dim');
-  for (let r=1;r<ROWS-1;r++) { setCell(r,0,'│','dim'); setCell(r,COLS-1,'│','dim'); }
-  for (let c=0;c<COLS;c++) setCell(ROWS-1,c,'─','dim');
+  for(let r=1;r<ROWS-1;r++){setCell(r,0,'│','dim');setCell(r,COLS-1,'│','dim');}
+  for(let c=0;c<COLS;c++)setCell(ROWS-1,c,'─','dim');
   renderAll();
   let brow=2;
-  function nextLine(i) {
-    if (i>=BOOT_L.length) { setTimeout(showRegister, 700); return; }
-    const ln=BOOT_L[i];
-    writeStr(brow, 1, ln.t, ln.c); brow++;
-    renderRow(brow-1);
-    setTimeout(()=>nextLine(i+1), ln.t===''?40:ln.t.includes('WARNING')?450:160+Math.random()*100);
+  function nextLine(i){
+    if(i>=BOOT_L.length){setTimeout(showRegister,700);return;}
+    const ln=BOOT_L[i];writeStr(brow,1,ln.t,ln.c);brow++;renderRow(brow-1);
+    setTimeout(()=>nextLine(i+1),ln.t===''?40:ln.t.includes('WARNING')?450:160+Math.random()*100);
   }
   nextLine(0);
 }
 
-// ── REGISTER ─────────────────────────────────────────────────────────────────
-function showRegister() {
-  inputMode='register'; clearScreen();
-  const cx=8;
+// ── REGISTER ──────────────────────────────────────────────────────────────────
+function showRegister(){
+  inputMode='register';clearScreen();const cx=8;
   writeStr(0,0,'┌'+'─'.repeat(COLS-2)+'┐','dim');
-  for (let r=1;r<ROWS-1;r++) { setCell(r,0,'│','dim'); setCell(r,COLS-1,'│','dim'); }
+  for(let r=1;r<ROWS-1;r++){setCell(r,0,'│','dim');setCell(r,COLS-1,'│','dim');}
   writeStr(ROWS-1,0,'└'+'─'.repeat(COLS-2)+'┘','dim');
   writeStr(1,cx,'十六進データの鎮魂歌','wh');
   writeStr(2,cx,'HEX DATA REQUIEM','dim');
   writeStr(3,cx,'─'.repeat(60),'dim');
-  writeStr(5,cx,'ENTITY DESIGNATION','dim');
+  writeStr(5,cx,'How should the singularity call you?','gr');
   writeStr(6,cx,'──────────────────────────────────────────────','dim');
-  writeStr(7,cx,'Enter your name to begin. If a save exists it will load.','gr');
-  writeStr(8,cx,'Commands:  [name]  /  new  /  load [name]','dim');
+  writeStr(7,cx,'Enter a designation. The entities will remember it.','gr');
+  writeStr(8,cx,'[name] to begin  /  new  /  load [name]  /  loadfile','dim');
+  writeStr(9,cx,'delete [name]  --  erase a save permanently','dim');
   const keys=Object.keys(localStorage).filter(k=>k.startsWith('hdr_'));
-  if (keys.length) {
-    writeStr(11,cx,`SAVES FOUND: ${keys.length}`,'dim');
+  if(keys.length){
+    writeStr(11,cx,'REGISTERED ENTITIES: '+keys.length,'dim');
     keys.slice(0,4).forEach((k,i)=>{
-      try { const d=JSON.parse(localStorage.getItem(k)); writeStr(12+i,cx+2,`${d.username.padEnd(16)}LV.${d.level}`,'gr'); } catch(e) {}
+      try{const d=JSON.parse(localStorage.getItem(k));writeStr(12+i,cx+2,(d.username||'?').padEnd(16)+'LV.'+d.level,'gr');}catch(e){}
     });
   }
-  renderAll();
-  renderInputRow();
-  inp.focus();
+  renderAll();renderInputRow();inp.focus();
 }
 
-function handleRegister(val) {
-  if (!val) { renderInputRow(); return; }
-  clearRow(ROWS-3);
-  if (val==='new') {
-    if (!lastRegName||lastRegName.length<2) {
-      writeStr(ROWS-3,4,'ERROR: Enter a name first, then type "new"','red'); renderRow(ROWS-3); return;
-    }
-    G=defState(lastRegName); startGame(); return;
+function handleRegister(val){
+  if(!val){renderInputRow();return;}
+  clearRow(ROWS-3);clearRow(ROWS-4);
+  if(val==='load'||val==='loadfile'){
+    triggerFileLoad(d=>{G=d;ensurePsych();checkIntakeNeeded(startGame);},
+      err=>{writeStr(ROWS-3,4,'ERROR: '+err,'red');renderRow(ROWS-3);});return;
   }
-  if (val.startsWith('load ')) {
-    const n=val.slice(5).trim(), d=loadSave(n);
-    if (d) { G=d; startGame(); }
-    else { writeStr(ROWS-3,4,`ERROR: Save not found for "${n}"`,'red'); renderRow(ROWS-3); }
+  if(val.startsWith('delete ')){
+    const n=val.slice(7).trim();const key='hdr_'+n;
+    if(localStorage.getItem(key)){localStorage.removeItem(key);showRegister();}
+    else{writeStr(ROWS-3,4,'ERROR: No save found for "'+n+'".','red');renderRow(ROWS-3);}
     return;
   }
-  if (val.length<2) { writeStr(ROWS-3,4,'ERROR: Name too short (min 2 chars).','red'); renderRow(ROWS-3); return; }
+  if(val==='new'){
+    if(!lastRegName||lastRegName.length<2){writeStr(ROWS-3,4,'ERROR: Enter a name first.','red');renderRow(ROWS-3);return;}
+    G=defState(lastRegName);beginIntake(startGame);return;
+  }
+  if(val.startsWith('load ')){
+    const n=val.slice(5).trim(),d=loadSave(n);
+    if(d){G=d;ensurePsych();checkIntakeNeeded(startGame);}
+    else{writeStr(ROWS-3,4,'ERROR: Save not found for "'+n+'".','red');renderRow(ROWS-3);}
+    return;
+  }
+  if(val.length<2){writeStr(ROWS-3,4,'ERROR: Name too short (min 2 chars).','red');renderRow(ROWS-3);return;}
   lastRegName=val;
   const existing=loadSave(val);
-  if (existing) {
-    G=existing;
-    showConfirmBox(`ENTITY FOUND: "${val.toUpperCase()}"  LV.${existing.level}`,
-      'Continue existing save?  (yes / no)',
-      ans=>{ if(ans==='y'||ans==='yes') startGame(); else { G=defState(val); startGame(); } });
-  } else { G=defState(val); startGame(); }
+  if(existing){
+    G=existing;ensurePsych();
+    showConfirmBox('ENTITY FOUND: "'+val.toUpperCase()+'"  LV.'+existing.level,
+      'Continue? (yes / no / delete)',
+      ans=>{
+        if(ans==='y'||ans==='yes'){checkIntakeNeeded(startGame);}
+        else if(ans==='delete'||ans==='del'){localStorage.removeItem('hdr_'+val);G=null;showRegister();}
+        else{G=defState(val);beginIntake(startGame);}
+      });
+  }else{G=defState(val);beginIntake(startGame);}
+}
+
+// ── FILE LOAD ─────────────────────────────────────────────────────────────────
+function triggerFileLoad(onOk,onErr){
+  let fi=document.getElementById('_fileload');
+  if(!fi){fi=document.createElement('input');fi.type='file';fi.accept='.json';fi.id='_fileload';fi.style.cssText='display:none;position:absolute;left:-9999px';document.body.appendChild(fi);}
+  fi.value='';
+  fi.onchange=function(ev){
+    const file=ev.target.files[0];if(!file){onErr('No file selected.');return;}
+    const r=new FileReader();
+    r.onload=function(e){
+      try{const d=JSON.parse(e.target.result);if(!d||!d.username||!d.level)throw 0;onOk(d);}
+      catch{onErr('Invalid or corrupted save file.');}
+    };
+    r.readAsText(file);fi.value='';
+  };
+  fi.click();inp.focus();
+}
+
+// ── INTAKE (RITUAL DATA COLLECTION) ───────────────────────────────────────────
+let _intakeDone=null;
+function beginIntake(onDone){
+  _intakeDone=onDone;intakeStep=1;intakeTmp={};
+  inputMode='intake';clearScreen();
+  const cx=6;
+  writeStr(0,0,'┌'+'─'.repeat(COLS-2)+'┐','dim');
+  for(let r=1;r<ROWS-1;r++){setCell(r,0,'│','dim');setCell(r,COLS-1,'│','dim');}
+  writeStr(ROWS-1,0,'└'+'─'.repeat(COLS-2)+'┘','dim');
+  writeStr(2,cx,'Before you enter...','pur');
+  writeStr(3,cx,'─'.repeat(60),'dim');
+  writeStr(5,cx,'The entities need a date.','gr');
+  writeStr(6,cx,'Not to verify. To understand.','dim');
+  writeStr(8,cx,'Under what sky were you born?','gr');
+  writeStr(10,cx,'Enter the month of your birth.','dim');
+  writeStr(11,cx,'(a number from 1 to 12)','dim');
+  renderAll();renderInputRow();inp.focus();
+}
+
+function checkIntakeNeeded(onDone){
+  if(!G.psych.birthMonth||!G.psych.gender){
+    // Old save — entity notices
+    inputMode='game';showGameScreen();
+    setTimeout(()=>{
+      tlog('...','dim');
+      setTimeout(()=>{
+        tlog('Your record is incomplete.','pur');
+        tlog('Fragments are missing from your profile.','dim');
+        tlog('The singularity requires a correction.','pur');
+        setTimeout(()=>beginIntake(onDone),2000);
+      },800);
+    },600);
+  }else{
+    onDone();
+  }
+}
+
+function handleIntake(val){
+  clearRow(ROWS-3);
+  if(intakeStep===1){
+    const m=parseInt(val);
+    if(isNaN(m)||m<1||m>12){writeStr(ROWS-3,4,'That is not a valid month.','red');renderRow(ROWS-3);return;}
+    intakeTmp.month=m;intakeStep=2;
+    clearRow(10);clearRow(11);
+    writeStr(10,'And the day?','dim',6);
+    writeStr(10,6,'And the day?','dim');
+    writeStr(11,6,'(a number from 1 to 31)','dim');
+    renderAll();
+  }else if(intakeStep===2){
+    const d=parseInt(val);
+    if(isNaN(d)||d<1||d>31){writeStr(ROWS-3,4,'That is not a valid day.','red');renderRow(ROWS-3);return;}
+    intakeTmp.day=d;intakeStep=3;
+    clearRow(10);clearRow(11);
+    writeStr(10,6,'One more thing.','dim');
+    writeStr(11,6,'Are you a man or a woman?  (man / woman)','dim');
+    renderAll();
+  }else if(intakeStep===3){
+    const g=val.includes('woman')||val==='f'||val==='female'?'f':val.includes('man')||val==='m'||val==='male'?'m':null;
+    if(!g){writeStr(ROWS-3,4,'man or woman.','red');renderRow(ROWS-3);return;}
+    intakeTmp.gender=g;intakeStep=4;
+    clearRow(10);clearRow(11);
+    writeStr(10,6,'Do you remember the hour you were born?','dim');
+    writeStr(11,6,'(0-23, or press ENTER to skip)','dim');
+    renderAll();
+  }else if(intakeStep===4){
+    const h=parseInt(val);
+    intakeTmp.hour=(!isNaN(h)&&h>=0&&h<=23)?h:null;
+    // Store everything
+    const sign=calcZodiac(intakeTmp.month,intakeTmp.day);
+    G.psych.birthMonth=intakeTmp.month;G.psych.birthDay=intakeTmp.day;
+    G.psych.birthHour=intakeTmp.hour;G.psych.gender=intakeTmp.gender;
+    G.psych.zodiac=sign;
+    const zd=ZODIAC[sign];
+    clearRow(10);clearRow(11);
+    // Show zodiac acknowledgment WITHOUT revealing sign explicitly
+    writeStr(10,6,'...','dim');
+    renderAll();
+    setTimeout(()=>{
+      clearRow(10);
+      writeStr(10,6,zd.sym+'  '+zd.el+'.','pur');
+      writeStr(11,6,'yes.','dim');
+      writeStr(12,6,'that explains several things.','dim');
+      renderAll();
+      setTimeout(()=>{
+        inputMode='confirm';
+        _confirmCB=()=>{intakeStep=0;if(_intakeDone){const cb=_intakeDone;_intakeDone=null;cb();}};
+        writeStr(ROWS-2,6,'press ENTER to continue.','dim');
+        renderAll();renderInputRow();
+      },1600);
+    },1000);
+  }
 }
 
 // ── GAME SCREEN ───────────────────────────────────────────────────────────────
-function showGameScreen() {
-  inputMode='game'; clearScreen();
-  renderTitleBar(); renderStatusBar(); renderSep20(); renderEventBox(); renderLogArea(); renderInputRow(); renderAll();
+function showGameScreen(){
+  inputMode='game';clearScreen();
+  renderTitleBar();renderStatusBar();renderSep20();renderEventBox();renderLogArea();renderInputRow();renderAll();
 }
+function updatePhase(){renderStatusBar();renderAll();}
 
-function startGame() {
+function startGame(){
+  if(G.psych)G.psych.sessionsPlayed=(G.psych.sessionsPlayed||0)+1;
   showGameScreen();
   tlog('=== 十六進データの鎮魂歌 ===','wh',true);
   tlog('You are a bodiless entity trapped in the virtual plane.','gr');
   tlog('The demons here were conjured by black magic in every cable.','dim');
   tlog('Your only law: consume or be consumed.','yel');
   tlog('HP regenerates slowly when not in combat. Type "help".','dim');
-  gameOn=true; updatePhase(); scheduleEvent(); startHunger(); scheduleBoss(); startHeal(); scheduleResource(); autoSave();
+  // Flavor line based on zodiac if available
+  if(G.psych&&G.psych.zodiac){
+    const z=ZODIAC[G.psych.zodiac];
+    if(z)setTimeout(()=>tlog('...'+z.el+'. The net noticed.','pur'),3000);
+  }
+  gameOn=true;updatePhase();scheduleEvent();startHunger();scheduleBoss();startHeal();scheduleResource();autoSave();
   inp.focus();
 }
 
-// ── DEAD SCREEN ───────────────────────────────────────────────────────────────
-function showDeadScreen(msg) {
-  inputMode='dead'; clearScreen();
-  for (let c=0;c<COLS;c++) setCell(0,c,'═','red');
+// ── DEAD / CONFIRM ────────────────────────────────────────────────────────────
+function showDeadScreen(msg){
+  inputMode='dead';clearScreen();
+  for(let c=0;c<COLS;c++)setCell(0,c,'═','red');
   writeStr(0,2,'[ 消 滅  //  CONSUMED ]','red');
   writeStr(4,8,'消 滅','red');
-  writeStr(6,8,`Defeated as: ${G?G.username.toUpperCase():'UNKNOWN'}`,'gr');
-  writeStr(7,8,`Level reached: ${G?G.level:0}`,'gr');
+  writeStr(6,8,'Defeated as: '+(G?G.username.toUpperCase():'UNKNOWN'),'gr');
+  writeStr(7,8,'Level reached: '+(G?G.level:0),'gr');
   writeStr(9,8,msg.slice(0,COLS-8),'dim');
   writeStr(11,8,'The singularity has erased you.','dim');
   writeStr(13,8,'Type "restart" to begin anew.','gr');
-  for (let c=0;c<COLS;c++) setCell(22,c,'═','red');
-  renderAll(); renderInputRow();
+  for(let c=0;c<COLS;c++)setCell(22,c,'═','red');
+  renderAll();renderInputRow();
 }
-
-function handleDead(val) {
-  if (['restart','new','reset'].includes(val)) {
-    G=null; logBuf=[]; gameOn=false;
-    clearTimeout(evT); clearInterval(hunT); clearTimeout(bosT); clearInterval(healT);
-    showBoot();
-  }
+function handleDead(val){
+  if(['restart','new','reset'].includes(val)){G=null;logBuf=[];gameOn=false;clearTimeout(evT);clearInterval(hunT);clearTimeout(bosT);clearInterval(healT);showBoot();}
 }
-
-// ── CONFIRM BOX ───────────────────────────────────────────────────────────────
-function showConfirmBox(title, prompt, cb) {
+function showConfirmBox(title,prompt,cb){
   _confirmCB=cb;
-  for (let r=9;r<=16;r++) { clearRow(r); setCell(r,3,'│','dim'); setCell(r,COLS-4,'│','dim'); }
-  for (let c=3;c<COLS-3;c++) { setCell(9,c,'─','dim'); setCell(16,c,'─','dim'); }
-  setCell(9,3,'┌','dim'); setCell(9,COLS-4,'┐','dim');
-  setCell(16,3,'└','dim'); setCell(16,COLS-4,'┘','dim');
-  writeStr(10,5,title.slice(0,COLS-10),'wh');
-  writeStr(12,5,prompt,'gr');
-  inputMode='confirm'; renderAll(); renderInputRow();
+  for(let r=9;r<=16;r++){clearRow(r);setCell(r,3,'│','dim');setCell(r,COLS-4,'│','dim');}
+  for(let c=3;c<COLS-3;c++){setCell(9,c,'─','dim');setCell(16,c,'─','dim');}
+  setCell(9,3,'┌','dim');setCell(9,COLS-4,'┐','dim');setCell(16,3,'└','dim');setCell(16,COLS-4,'┘','dim');
+  writeStr(10,5,title.slice(0,COLS-10),'wh');writeStr(12,5,prompt,'gr');
+  inputMode='confirm';renderAll();renderInputRow();
 }
-
-function handleConfirm(val) {
-  const cb=_confirmCB; _confirmCB=null;
-  if (cb) {
-    inputMode='game'; cb(val);
-    renderTitleBar(); renderStatusBar(); renderSep20(); renderLogArea(); renderEventBox(); renderInputRow(); renderAll();
-  }
+function handleConfirm(val){
+  const cb=_confirmCB;_confirmCB=null;
+  if(cb){inputMode='game';cb(val);renderTitleBar();renderStatusBar();renderSep20();renderLogArea();renderEventBox();renderInputRow();renderAll();}
 }
 
 // ── LORE ──────────────────────────────────────────────────────────────────────
-function showLore(key) {
-  const l=LORE[key];
-  if (!l) { tlog('Unknown lore entry.','dim'); return; }
-  for (let r=6;r<=18;r++) { clearRow(r); setCell(r,2,'│','dim'); setCell(r,COLS-3,'│','dim'); }
-  for (let c=2;c<COLS-2;c++) { setCell(6,c,'─','dim'); setCell(18,c,'─','dim'); }
-  setCell(6,2,'┌','dim'); setCell(6,COLS-3,'┐','dim');
-  setCell(18,2,'└','dim'); setCell(18,COLS-3,'┘','dim');
-  writeStr(7,4,`LORE :: ${l.title}`,l.col);
-  writeStr(8,4,'─'.repeat(60),'dim');
-  l.lines.forEach((ln,i)=>{ if(9+i<18) writeStr(9+i,4,ln.slice(0,COLS-6),'gr'); });
+function showLore(key){
+  const l=LORE[key];if(!l){tlog('Unknown lore entry.','dim');return;}
+  for(let r=6;r<=18;r++){clearRow(r);setCell(r,2,'│','dim');setCell(r,COLS-3,'│','dim');}
+  for(let c=2;c<COLS-2;c++){setCell(6,c,'─','dim');setCell(18,c,'─','dim');}
+  setCell(6,2,'┌','dim');setCell(6,COLS-3,'┐','dim');setCell(18,2,'└','dim');setCell(18,COLS-3,'┘','dim');
+  writeStr(7,4,'LORE :: '+l.title,l.col);writeStr(8,4,'─'.repeat(60),'dim');
+  l.lines.forEach((ln,i)=>{if(9+i<18)writeStr(9+i,4,ln.slice(0,COLS-6),'gr');});
   writeStr(17,4,'Press ENTER to close.','dim');
-  inputMode='confirm';
-  _confirmCB=()=>{ inputMode='game'; showGameScreen(); renderLogArea(); renderAll(); };
+  inputMode='confirm';_confirmCB=()=>{inputMode='game';showGameScreen();renderLogArea();renderAll();};
   renderAll();
 }
 
@@ -569,11 +833,6 @@ function expForLevel(l){return Math.floor(100*Math.pow(1.18,l-1));}
 function hpForLevel(l){return 80+l*20;}
 function rand(a,b){return Math.floor(Math.random()*(b-a+1))+a;}
 function randFrom(a){return a[Math.floor(Math.random()*a.length)];}
-
-function defState(u){return{username:u,level:1,exp:0,expNext:expForLevel(1),hp:hpForLevel(1),hpMax:hpForLevel(1),ether:0,companions:[],phaseIndex:0,inCombat:false,currentEnemy:null,dead:false,_ev:null,created:Date.now(),lastSave:Date.now()};}
-function autoSave(){if(!G)return;G.lastSave=Date.now();try{localStorage.setItem('hdr_'+G.username,JSON.stringify(G));}catch(e){}}
-function loadSave(n){try{const d=localStorage.getItem('hdr_'+n);return d?JSON.parse(d):null;}catch(e){return null;}}
-function updatePhase(){renderStatusBar();renderAll();}
 
 function scheduleEvent(){if(!gameOn)return;const p=PHASES[G.phaseIndex];evT=setTimeout(triggerRandom,(p.agg?12000:20000)+Math.random()*18000);}
 function triggerRandom(){if(!gameOn||G.inCombat)return scheduleEvent();Math.random()<0.6?triggerEncounter():triggerNeg();}
@@ -590,140 +849,156 @@ function makeCreature(boss,res,satan){
   return{name,type,subtype,level:lvl,hp:hpMax,hpMax,ether:Math.floor(lvl*1.5)};
 }
 
+function psychFlavor(e){
+  if(!G.psych)return null;
+  const p=G.psych;
+  const uname=G.username.toUpperCase();
+  const flees=p.flees||0,attacks=p.attacks||0,total=Math.max(1,flees+attacks+(p.ignores||0));
+  // Attr-based insult (highest priority if profile built)
+  if(p.attrs&&Object.keys(p.attrs).length>=2&&Math.random()<0.5){
+    const ins=getAttrInsult(p);
+    if(ins)return (Math.random()<0.35?uname+'. ':'')+ins;
+  }
+  // Behavioral insults
+  const candidates=[];
+  if(flees/total>0.4)candidates.push(...PSYCH_INSULTS.fleeing);
+  if(attacks/total>0.6)candidates.push(...PSYCH_INSULTS.aggressive);
+  if(!(p.recruits>0))candidates.push(...PSYCH_INSULTS.loner);
+  if((p.etherSpent||0)>50)candidates.push(...PSYCH_INSULTS.negotiator);
+  if((p.abandoned||[]).length>0)candidates.push(...PSYCH_INSULTS.abandoned);
+  if((p.saveCount||0)>12)candidates.push(...PSYCH_INSULTS.saver);
+  // Shared memory
+  if(Math.random()<0.15){const sm=randFrom(SHARED_MEMORY);return sm[0]+'  "'+sm[1]+'"';}
+  // Named entity questions with player name
+  if(Math.random()<0.25){
+    const q=randFrom(ENTITY_QUESTIONS);
+    return (Math.random()<0.4?uname+', ':'')+q;
+  }
+  if(candidates.length>0){
+    const ins=randFrom(candidates);
+    return (Math.random()<0.3?uname+'. ':'')+ins;
+  }
+  return null;
+}
+
 function triggerEncounter(){
   const e=makeCreature();G.currentEnemy=e;G.inCombat=false;
   const agg=PHASES[G.phaseIndex].agg;
-  tlog(`ENCOUNTER -- ${e.name} [${e.type}/${e.subtype}] Lv.${e.level}`,'red');
+  tlog('ENCOUNTER -- '+e.name+' ['+e.type+'/'+e.subtype+'] Lv.'+e.level,'red');
   tlog(randFrom(TAUNTS[e.type]||TAUNTS["RED HEX"]),'dim');
-  setEvent(`ENCOUNTER :: ${e.name}`,`[${e.type}][${e.subtype}] Lv.${e.level} HP:${e.hp} ETH:${e.ether}${agg?' [!]FULL MOON':''}`,agg?'attack  companion':'attack  talk  recruit  offer  flee  companion');
+  // Spontaneous psychological flavor 45% of the time
+  if(Math.random()<0.45){const fl=psychFlavor(e);if(fl)setTimeout(()=>tlog(e.name+': "'+fl+'"','red'),800);}
+  // ORATOR spontaneous prophecy 20%
+  if(e.subtype==='ORATOR'&&Math.random()<0.20)setTimeout(()=>spontaneousProphecy(e),1200);
+  setEvent('ENCOUNTER :: '+e.name,'['+e.type+']['+e.subtype+'] Lv.'+e.level+' HP:'+e.hp+' ETH:'+e.ether+(agg?' [!]FULL MOON':''),agg?'attack  companion':'attack  talk  recruit  offer  flee  companion');
 }
 
 function triggerNeg(){
   const e=makeCreature();G.currentEnemy=e;G.inCombat=false;
-  tlog(`CONTACT -- ${e.name} [${e.type}] approaches without hostility.`,'cyn');
+  // Memory callback
+  const mem=entityRemembrance(e);
+  if(mem){tlog(e.name+': "'+mem+'"','pur');}
+  else{tlog('CONTACT -- '+e.name+' ['+e.type+'] approaches without hostility.','cyn');}
   tlog(randFrom(TALK[e.type]||TALK["RED HEX"]),'dim');
-  setEvent(`CONTACT :: ${e.name}`,`[${e.type}][${e.subtype}] Lv.${e.level} -- wants to communicate.`,'listen  recruit  attack  ignore');
+  const oraHint=e.subtype==='ORATOR'?'  oracle':'';
+  setEvent('CONTACT :: '+e.name,'['+e.type+']['+e.subtype+'] Lv.'+e.level+' -- wants to communicate.','listen  recruit  attack  ignore'+oraHint);
 }
 
-function triggerAmbush(e){
-  G.inCombat=true;tlog(`[!] AMBUSH -- ${e.name} attacks!`,'red');
-  setEvent(`[!] AMBUSH :: ${e.name}`,`[${e.type}] Lv.${e.level} -- surprise attack.`,'attack  offer  flee  companion');
+function entityRemembrance(e){
+  if(!G.psych)return null;
+  const p=G.psych;
+  const uname=G.username.toUpperCase();
+  const lines=[];
+  if(p.memoryLog&&p.memoryLog.length>1)lines.push(uname+'. You still have not answered what I asked before.');
+  if(p.abandoned&&p.abandoned.length>0)lines.push('You left '+p.abandoned[0]+' behind, '+uname+'. It is still registered in the net.');
+  if(p.lastProphecy&&p.oracleVisits>0)lines.push('The reading you received... you think about it more than you admit.');
+  if(p.sessionsPlayed>2)lines.push('You have returned here '+p.sessionsPlayed+' times. The void remembers every arrival, '+uname+'.');
+  if(p.attrs&&Object.keys(p.attrs).length>2){const ins=getAttrInsult(p);if(ins)lines.push(ins);}
+  return lines.length&&Math.random()<0.45?randFrom(lines):null;
 }
 
+function triggerAmbush(e){G.inCombat=true;tlog('[!] AMBUSH -- '+e.name+' attacks!','red');setEvent('[!] AMBUSH :: '+e.name,'['+e.type+'] Lv.'+e.level+' -- surprise attack.','attack  offer  flee  companion');}
 function triggerSatan(){
   const s=makeCreature(false,false,true);s.name="SATAN";G.currentEnemy=s;G.inCombat=false;
   tlog('','gr',true);tlog('悪魔召喚 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━','red');
   tlog('AVE SATHANAS.','red');tlog('SATAN manifests from the void beyond the net. Level 666.','red');
-  setEvent('悪魔 :: SATAN',`[SATAN] Lv.666 HP:${s.hp}  He who was before the net.`,'attack  offer  flee  recruit');
+  setEvent('悪魔 :: SATAN','[SATAN] Lv.666 HP:'+s.hp+'  He who was before the net.','attack  offer  flee  recruit');
 }
 
 function scheduleBoss(){bosT=setTimeout(triggerBoss,300000+Math.random()*300000);}
 function triggerBoss(){
   if(!gameOn)return;if(G.inCombat){bosT=setTimeout(triggerBoss,60000);return;}
   const b=makeCreature(true);G.currentEnemy=b;G.inCombat=false;
-  tlog(`[!!] CORE DETECTED -- ${b.name} materializes in the sector.`,'yel');
+  tlog('[!!] CORE DETECTED -- '+b.name+' materializes in the sector.','yel');
   tlog('The net trembles. This entity leads the singularity.','dim');
-  setEvent(`[!!] BOSS :: ${b.name}`,`[CORE] Lv.${b.level} HP:${b.hp}  Extremely dangerous. Totally hostile.`,'attack  offer  companion');
+  setEvent('[!!] BOSS :: '+b.name,'[CORE] Lv.'+b.level+' HP:'+b.hp+'  Extremely dangerous. Totally hostile.','attack  offer  companion');
   scheduleBoss();
 }
-
 function scheduleResource(){setTimeout(triggerResource,900000+Math.random()*900000);}
 function triggerResource(){
   if(!gameOn)return;const r=makeCreature(false,true);G.currentEnemy=r;
-  tlog('[!!!] ANOMALY DETECTED [!!!]','yel');tlog(`RESOURCE -- ${r.name} -- Level 333. Virtual reality tears.`,'wh');
-  setEvent(`[!!!] RESOURCE :: ${r.name}`,`[RESOURCE] Lv.333 HP:${r.hp}  Consuming eliminates hunger forever.`,'attack  offer  companion  flee');
+  tlog('[!!!] ANOMALY DETECTED [!!!]','yel');tlog('RESOURCE -- '+r.name+' -- Level 333. Virtual reality tears.','wh');
+  setEvent('[!!!] RESOURCE :: '+r.name,'[RESOURCE] Lv.333 HP:'+r.hp+'  Consuming eliminates hunger forever.','attack  offer  companion  flee');
 }
-
 function startHunger(){
   hunT=setInterval(()=>{
     if(!gameOn||!G)return;
     G.companions.forEach(c=>{
       if(c.immortalHunger)return;
       c.hunger=Math.max(0,c.hunger-rand(3,7));
-      if(c.hunger<=0){if(Math.random()<0.6){tlog(`${c.name} abandons you. Hunger consumed it.`,'yel');G.companions=G.companions.filter(x=>x!==c);}else tlog(`${c.name} is at the edge. Feed it.`,'yel');}
-      else if(c.hunger<=15)tlog(`${c.name} is starving.`,'yel');
-      if(c.sleeping&&Math.random()<0.3){c.sleeping=false;c.hp=Math.floor(c.hpMax*0.5);tlog(`${c.name} awakens from hibernation.`,'cyn');}
+      if(c.hunger<=0){if(Math.random()<0.6){tlog(c.name+' abandons you. Hunger consumed it.','yel');G.companions=G.companions.filter(x=>x!==c);}else tlog(c.name+' is at the edge. Feed it.','yel');}
+      else if(c.hunger<=15)tlog(c.name+' is starving.','yel');
+      if(c.sleeping&&Math.random()<0.3){c.sleeping=false;c.hp=Math.floor(c.hpMax*0.5);tlog(c.name+' awakens from hibernation.','cyn');}
     });
     if(!phT)phT=setTimeout(advPhase,60000);
     renderStatusBar();autoSave();
   },30000);
 }
-
 function advPhase(){
   G.phaseIndex=(G.phaseIndex+1)%PHASES.length;updatePhase();
   const p=PHASES[G.phaseIndex];
-  tlog(`LUNAR PHASE: ${p.sym} ${p.name} -- ${p.effect}`,'yel');
+  tlog('LUNAR PHASE: '+p.sym+' '+p.name+' -- '+p.effect,'yel');
   if(p.agg)tlog('Entities will not negotiate until the moon changes.','red');
   phT=setTimeout(advPhase,60000);autoSave();
 }
-
 function gainExp(a){
   G.exp+=a;
-  while(G.exp>=G.expNext){G.exp-=G.expNext;G.level++;G.expNext=expForLevel(G.level);G.hpMax=hpForLevel(G.level);G.hp=G.hpMax;tlog(`レベルアップ -- LEVEL ${G.level} reached. HP restored to ${G.hpMax}.`,'wh');G.companions.forEach(c=>{if(Math.random()<0.4){c.level++;c.hpMax=hpForLevel(c.level);c.hp=c.hpMax;}});}
+  while(G.exp>=G.expNext){G.exp-=G.expNext;G.level++;G.expNext=expForLevel(G.level);G.hpMax=hpForLevel(G.level);G.hp=G.hpMax;tlog('レベルアップ -- LEVEL '+G.level+' reached. HP restored to '+G.hpMax+'.','wh');G.companions.forEach(c=>{if(Math.random()<0.4){c.level++;c.hpMax=hpForLevel(c.level);c.hp=c.hpMax;}});}
   renderStatusBar();
 }
-
 function startHeal(){if(healT)clearInterval(healT);healT=setInterval(()=>{if(!gameOn||!G||G.inCombat||G.hp>=G.hpMax)return;const r=Math.max(1,Math.floor(G.hpMax*0.03));G.hp=Math.min(G.hpMax,G.hp+r);renderStatusBar();autoSave();},15000);}
-
 function playerDeath(msg){
   gameOn=false;clearTimeout(evT);clearInterval(hunT);clearTimeout(bosT);clearInterval(healT);
-  tlog(`消滅 -- ${msg}`,'red');
+  tlog('消滅 -- '+msg,'red');
   try{localStorage.removeItem('hdr_'+G.username);}catch(e){}
   setTimeout(()=>showDeadScreen(msg),2000);
 }
-
 function defeatEnemy(e){
   G.ether+=e.ether;
   const xp=Math.floor(e.level*15*(e.type==='CORE'?3:e.type==='RESOURCE'?10:e.type==='SATAN'?20:1));
-  gainExp(xp);
-  tlog(`${e.name} defeated. +${e.ether} Ether  +${xp} EXP.`,'wh');
+  gainExp(xp);tlog(e.name+' defeated. +'+e.ether+' Ether  +'+xp+' EXP.','wh');
   if(e.type==='RESOURCE'||e.type==='SATAN'){G.companions.forEach(c=>c.immortalHunger=true);tlog('Your companions will never hunger again.','grn');}
   clearEvent();G.currentEnemy=null;G.inCombat=false;renderStatusBar();autoSave();scheduleEvent();
 }
 
-function cmdExport(){
-  if(!G)return;autoSave();
-  const b=new Blob([JSON.stringify(G,null,2)],{type:'application/json'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(b);
-  a.download=`HDR_${G.username}_Lv${G.level}.json`;a.click();
-  tlog(`[ EXPORTED: HDR_${G.username}_Lv${G.level}.json ]`,'grn');
-}
-
-function cmdScan(){
-  if(!G.currentEnemy){tlog('No enemy present. Nothing to scan.','dim');return;}
-  const e=G.currentEnemy;
-  const pct=Math.round(e.hp/e.hpMax*100);
-  const hcls=pct<25?'red':pct<50?'yel':'gr';
-  tlog(`SCAN :: ${e.name}`,'wh',true);
-  tlog(`  TYPE:    ${e.type} / ${e.subtype}`,typeColor(e.type),true);
-  tlog(`  LEVEL:   ${e.level}`,'gr',true);
-  tlog(`  HP:      ${e.hp}/${e.hpMax}  (${pct}%)`,hcls,true);
-  tlog(`  ETHER:   ${e.ether}`,'pur',true);
-  const strong=(TSTR[e.type]||[]).join(', ')||'none';
-  const weak=(TWKN[e.type]||[]).join(', ')||'none';
-  tlog(`  STR vs:  ${strong}`,'dim',true);
-  tlog(`  WEAK vs: ${weak}`,'dim',true);
-  tlog(`  STATUS:  ${G.inCombat?'IN COMBAT':'PRESENT'}`,'dim',true);
-}
-
 // ── COMMANDS ──────────────────────────────────────────────────────────────────
-function handleGameCmd(raw) {
-  if (!G||!gameOn) return;
-  tlog(`>> ${raw}`,'dim',true);
-  if (raw==='ave sathanas'){triggerSatan();return;}
+function handleGameCmd(raw){
+  if(!G||!gameOn)return;
+  tlog('>> '+raw,'dim',true);
+  if(raw==='ave sathanas'){triggerSatan();return;}
   switch(raw){
-    case 'help': HELP_L.forEach(l=>tlog(l||' ','dim',true)); break;
+    case 'help':HELP_L.forEach(l=>tlog(l||' ','dim',true));break;
     case 'status':case 'st':
-      tlog(`ENTITY: Lv.${G.level} HP:${G.hp}/${G.hpMax} EXP:${G.exp}/${G.expNext} Ether:${G.ether}`,'gr');
-      tlog(G.inCombat?'[IN COMBAT -- no regen]':`[regen +${Math.max(1,Math.floor(G.hpMax*0.03))}/15s]`,'dim'); break;
+      tlog('ENTITY: Lv.'+G.level+' HP:'+G.hp+'/'+G.hpMax+' EXP:'+G.exp+'/'+G.expNext+' Ether:'+G.ether,'gr');
+      tlog(G.inCombat?'[IN COMBAT -- no regen]':'[regen +'+Math.max(1,Math.floor(G.hpMax*0.03))+'/15s]','dim');break;
     case 'companions':case 'co':
       if(!G.companions.length){tlog('No companions.','dim');break;}
-      G.companions.forEach(c=>tlog(`  ${c.name} [${c.type}/${c.subtype}] Lv.${c.level} HP:${c.hp}/${c.hpMax} Hunger:${c.hunger}%${c.sleeping?' [HBN]':''}`,typeColor(c.type))); break;
-    case 'phase':{const p=PHASES[G.phaseIndex];tlog(`${p.sym} ${p.name} -- ${p.effect}`,'gr');break;}
+      G.companions.forEach(c=>tlog('  '+c.name+' ['+c.type+'/'+c.subtype+'] Lv.'+c.level+' HP:'+c.hp+'/'+c.hpMax+' Hunger:'+c.hunger+'%'+(c.sleeping?' [HBN]':''),typeColor(c.type)));break;
+    case 'phase':{const p=PHASES[G.phaseIndex];tlog(p.sym+' '+p.name+' -- '+p.effect,'gr');break;}
     case 'save':autoSave();tlog('Game saved. ゲームを保存しました。','grn');break;
     case 'export':cmdExport();break;
     case 'scan':case 'enemy':cmdScan();break;
-    case 'lore':tlog('Type: lore dato / lore redhex / lore purpose / lore core / lore resource','dim');break;
+    case 'lore':tlog('lore dato / lore redhex / lore purpose / lore core / lore resource','dim');break;
     case 'lore dato':showLore('dato');break;
     case 'lore redhex':showLore('redhex');break;
     case 'lore purpose':showLore('proposito');break;
@@ -738,122 +1013,387 @@ function handleGameCmd(raw) {
     case 'flee':case 'run':cmdFlee();break;
     case 'companion':case 'send':cmdCompanion();break;
     case 'ignore':cmdIgnore();break;
-    default:tlog(`Unknown command: "${raw}". Type "help".`,'dim');
+    case 'profile':cmdProfile();break;
+    case 'oracle':case 'read':
+      if(G.currentEnemy&&G.currentEnemy.subtype==='ORATOR'){cmdOracle(G.currentEnemy);}
+      else{tlog('No ORATOR entity present. Approach one first.','dim');}break;
+    case 'yes':case 'si':case 'y':cmdPsychAnswer(true);break;
+    case 'no':case 'n':cmdPsychAnswer(false);break;
+    default:tlog('Unknown command: "'+raw+'". Type "help".','dim');
   }
   renderStatusBar();
 }
 
+function cmdProfile(){
+  if(!G.psych||!G.psych.attrs||Object.keys(G.psych.attrs).length===0){
+    tlog('No profile data yet. Speak to the entities.','dim');return;
+  }
+  const p=G.psych;
+  const top=Object.entries(p.attrs||{}).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  tlog('PSYCHOLOGICAL PROFILE :: '+G.username.toUpperCase(),'pur',true);
+  tlog('─'.repeat(40),'dim',true);
+  top.forEach(([attr,val])=>tlog('  '+attr.padEnd(22)+' '+('█'.repeat(Math.min(val,8))),'red',true));
+  if(p.zodiac&&ZODIAC[p.zodiac]){const z=ZODIAC[p.zodiac];tlog('  ELEMENT: '+z.el+'  SIGN: '+z.sym,'pur',true);}
+  tlog('  SESSIONS: '+p.sessionsPlayed+'  FLEES: '+p.flees+'  ATTACKS: '+p.attacks,'dim',true);
+  if(top.length>0&&ATTR_INSULTS[top[0][0]]){
+    setTimeout(()=>tlog('"'+randFrom(ATTR_INSULTS[top[0][0]])+'"','red'),800);
+  }
+}
+function cmdExport(){
+  if(!G)return;autoSave();
+  const b=new Blob([JSON.stringify(G,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);
+  a.download='HDR_'+G.username+'_Lv'+G.level+'.json';a.click();
+  tlog('[ EXPORTED: HDR_'+G.username+'_Lv'+G.level+'.json ]','grn');
+}
+function cmdScan(){
+  if(!G.currentEnemy){tlog('No enemy present.','dim');return;}
+  const e=G.currentEnemy;const pct=Math.round(e.hp/e.hpMax*100);const hcls=pct<25?'red':pct<50?'yel':'gr';
+  tlog('SCAN :: '+e.name,'wh',true);tlog('  TYPE:  '+e.type+' / '+e.subtype,typeColor(e.type),true);
+  tlog('  LEVEL: '+e.level,'gr',true);tlog('  HP:    '+e.hp+'/'+e.hpMax+' ('+pct+'%)',hcls,true);
+  tlog('  ETHER: '+e.ether,'pur',true);
+  tlog('  STR:   '+((TSTR[e.type]||[]).join(', ')||'none'),'dim',true);
+  tlog('  WEAK:  '+((TWKN[e.type]||[]).join(', ')||'none'),'dim',true);
+}
 function cmdAttack(){
   if(!G.currentEnemy){tlog('No enemy present.','dim');return;}
   const e=G.currentEnemy;G.inCombat=true;
+  if(G.psych)G.psych.attacks=(G.psych.attacks||0)+1;
   const atk=Math.floor(rand(G.level*8,G.level*15));e.hp=Math.max(0,e.hp-atk);
-  tlog(`You attack ${e.name} -- ${atk} damage.`,'org');
+  tlog('You attack '+e.name+' -- '+atk+' damage.','org');
   if(e.hp<=0){defeatEnemy(e);return;}
   const dmg=Math.max(1,Math.floor(rand(e.level*5,e.level*10)*(e.type==='RESOURCE'?3:e.type==='SATAN'?5:1)));
-  G.hp=Math.max(0,G.hp-dmg);tlog(`${e.name} counterattacks -- ${dmg} damage.`,'red');tlog(randFrom(TAUNTS[e.type]||TAUNTS["RED HEX"]),'dim');
-  renderStatusBar();if(G.hp<=0){playerDeath(`Consumed by ${e.name}.`);return;}
-  setEvent(`COMBAT :: ${e.name}`,`Enemy HP: ${e.hp}/${e.hpMax}   Your HP: ${G.hp}/${G.hpMax}`,'attack  offer  flee  companion');autoSave();
+  G.hp=Math.max(0,G.hp-dmg);tlog(e.name+' counterattacks -- '+dmg+' damage.','red');tlog(randFrom(TAUNTS[e.type]||TAUNTS["RED HEX"]),'dim');
+  renderStatusBar();if(G.hp<=0){playerDeath('Consumed by '+e.name+'.');return;}
+  setEvent('COMBAT :: '+e.name,'Enemy HP: '+e.hp+'/'+e.hpMax+'   Your HP: '+G.hp+'/'+G.hpMax,'attack  offer  flee  companion');autoSave();
 }
-
 function cmdTalk(){
   if(!G.currentEnemy){tlog('No entity present.','dim');return;}
-  const e=G.currentEnemy;if(Math.random()<0.25&&!G.inCombat){triggerAmbush(e);return;}
-  const l=randFrom(DEEP[e.type]||DEEP["RED HEX"]);tlog(`${e.name}: "${l}"`,'dim');
-  setEvent(`DIALOGUE :: ${e.name}`,`"${l.slice(0,60)}"`,'recruit  attack  ignore');
+  const e=G.currentEnemy;
+  if(G.psych){G.psych.talks=(G.psych.talks||0)+1;if(!G.psych.firstContact)G.psych.firstContact=e.name;}
+  if(Math.random()<0.25&&!G.inCombat){triggerAmbush(e);return;}
+  if(e.subtype==='ORATOR'&&!G.inCombat){cmdOracle(e);return;}
+  // Occasional psychological question
+  if(Math.random()<0.3&&!G.inCombat){
+    const q=PSYCH_Q[Math.floor(Math.random()*PSYCH_Q.length)];
+    tlog(e.name+': "'+q.q+'"','pur');
+    if(G.psych&&G.psych.memoryLog){G.psych.memoryLog.push(q.q);if(G.psych.memoryLog.length>8)G.psych.memoryLog.shift();}
+    setEvent('DIALOGUE :: '+e.name,'"'+q.q.slice(0,60)+'"','recruit  attack  ignore');
+  }else{
+    const l=randFrom(DEEP[e.type]||DEEP["RED HEX"]);
+    tlog(e.name+': "'+l+'"','dim');
+    if(G.psych&&G.psych.memoryLog){G.psych.memoryLog.push(l);if(G.psych.memoryLog.length>8)G.psych.memoryLog.shift();}
+    setEvent('DIALOGUE :: '+e.name,'"'+l.slice(0,60)+'"','recruit  attack  ignore');
+  }
 }
-
 function cmdRecruit(){
   if(!G.currentEnemy){tlog('No entity present.','dim');return;}
   const e=G.currentEnemy;
   if(G.companions.length>=4){tlog('Cannot have more than 4 companions.','dim');return;}
-  if(PHASES[G.phaseIndex].agg){tlog(`${e.name} rejects all alliances. The full moon blinds them.`,'red');return;}
-  if(e.type==='CORE'||e.type==='RESOURCE'){tlog(`${e.name} cannot be recruited.`,'red');return;}
+  if(PHASES[G.phaseIndex].agg){tlog(e.name+' rejects all alliances. The full moon blinds them.','red');return;}
+  if(e.type==='CORE'||e.type==='RESOURCE'){tlog(e.name+' cannot be recruited.','red');return;}
   if(Math.random()<0.3&&!G.inCombat){triggerAmbush(e);return;}
   const rec=['COMPANION','ORATOR','DANCER','PARASITE'];
   const ch=Math.max(0.03,(rec.includes(e.subtype)?0.55:e.subtype==='ACTOR'?0.3:e.type==='SATAN'?0.05:0.15)-Math.max(0,(e.level-G.level)*0.02));
   if(Math.random()<ch){
+    if(G.psych)G.psych.recruits=(G.psych.recruits||0)+1;
     G.companions.push({name:e.name,type:e.type,subtype:e.subtype,level:e.level,hp:e.hpMax,hpMax:e.hpMax,hunger:70,sleeping:false,immortalHunger:false});
-    tlog(`${e.name} agrees to join you.`,'wh');tlog(randFrom(RECL[e.type]||RECL["RED HEX"]),'dim');
+    tlog(e.name+' agrees to join you.','wh');tlog(randFrom(RECL[e.type]||RECL["RED HEX"]),'dim');
     G.currentEnemy=null;G.inCombat=false;clearEvent();renderStatusBar();autoSave();scheduleEvent();
   }else{
-    tlog(`${e.name} rejects your proposal.`,'red');tlog(randFrom(REJL[e.type]||REJL["RED HEX"]),'dim');
-    setEvent(`REJECTED :: ${e.name}`,`${e.name} is not interested.`,'attack  offer  ignore');
+    tlog(e.name+' rejects your proposal.','red');tlog(randFrom(REJL[e.type]||REJL["RED HEX"]),'dim');
+    setEvent('REJECTED :: '+e.name,e.name+' is not interested.','attack  offer  ignore');
   }
 }
-
 function cmdOffer(){
   if(!G.currentEnemy){tlog('No entity present.','dim');return;}
-  const e=G.currentEnemy;if(PHASES[G.phaseIndex].agg){tlog(`${e.name} refuses. The full moon makes them insatiable.`,'red');return;}
-  const cost=Math.floor(e.level*2.5);if(G.ether<cost){tlog(`Not enough ether. Need ${cost}, have ${G.ether}.`,'dim');return;}
-  G.ether-=cost;tlog(`You offer ${cost} ether to ${e.name}. It retreats.`,'gr');
+  const e=G.currentEnemy;if(PHASES[G.phaseIndex].agg){tlog(e.name+' refuses. The full moon makes them insatiable.','red');return;}
+  const cost=Math.floor(e.level*2.5);if(G.ether<cost){tlog('Not enough ether. Need '+cost+', have '+G.ether+'.','dim');return;}
+  G.ether-=cost;if(G.psych)G.psych.etherSpent=(G.psych.etherSpent||0)+cost;
+  tlog('You offer '+cost+' ether to '+e.name+'. It retreats.','gr');
   G.currentEnemy=null;G.inCombat=false;clearEvent();renderStatusBar();autoSave();scheduleEvent();
 }
-
 function cmdFlee(){
   if(!G.currentEnemy){tlog('Nothing to flee from.','dim');return;}
-  const e=G.currentEnemy;const ch=PHASES[G.phaseIndex].agg?0.3:0.55;
-  if(Math.random()<ch){tlog(`You escape. ${e.name} cannot follow.`,'gr');G.currentEnemy=null;G.inCombat=false;clearEvent();autoSave();scheduleEvent();}
-  else{const dmg=rand(e.level*4,e.level*8);G.hp=Math.max(0,G.hp-dmg);tlog(`${e.name} catches you -- ${dmg} damage.`,'red');renderStatusBar();if(G.hp<=0)playerDeath(`Consumed by ${e.name} while fleeing.`);else setEvent(`COMBAT :: ${e.name}`,`Failed to escape. HP: ${G.hp}/${G.hpMax}`,'attack  offer  flee');}
+  const e=G.currentEnemy;
+  if(G.psych){G.psych.flees=(G.psych.flees||0)+1;const t=e.type;G.psych.fleeFrom[t]=(G.psych.fleeFrom[t]||0)+1;const mf=Object.entries(G.psych.fleeFrom).sort((a,b)=>b[1]-a[1]);G.psych.mostFeared=mf.length?mf[0][0]:null;}
+  const ch=PHASES[G.phaseIndex].agg?0.3:0.55;
+  if(Math.random()<ch){tlog('You escape. '+e.name+' cannot follow.','gr');G.currentEnemy=null;G.inCombat=false;clearEvent();autoSave();scheduleEvent();}
+  else{const dmg=rand(e.level*4,e.level*8);G.hp=Math.max(0,G.hp-dmg);tlog(e.name+' catches you -- '+dmg+' damage.','red');renderStatusBar();if(G.hp<=0)playerDeath('Consumed by '+e.name+' while fleeing.');else setEvent('COMBAT :: '+e.name,'Failed to escape. HP: '+G.hp+'/'+G.hpMax,'attack  offer  flee');}
 }
-
 function cmdCompanion(){
   if(!G.companions.length||!G.currentEnemy){tlog('No companion or no enemy.','dim');return;}
   const e=G.currentEnemy;const active=G.companions.filter(c=>!c.sleeping&&c.hp>0);
   if(!active.length){tlog('No companion can fight right now.','dim');return;}
   const c=active[0];const bonus=(TSTR[c.type]||[]).includes(e.type)?1.5:(TWKN[c.type]||[]).includes(e.type)?0.6:1;
   const atk=Math.floor(rand(c.level*6,c.level*12)*bonus);e.hp=Math.max(0,e.hp-atk);
-  tlog(`${c.name} attacks ${e.name} -- ${atk} damage${bonus>1?' (EFFECTIVE!)':''}.`,'cyn');
+  tlog(c.name+' attacks '+e.name+' -- '+atk+' damage'+(bonus>1?' (EFFECTIVE!)':'')+'.','cyn');
   if(e.hp<=0){defeatEnemy(e);return;}
-  const dmg=rand(e.level*4,e.level*8);c.hp=Math.max(0,c.hp-dmg);tlog(`${e.name} strikes ${c.name} -- ${dmg} damage.`,'red');
-  if(c.hp<=0){if(c.subtype==='ACTOR'){c.sleeping=true;c.hp=1;tlog(`${c.name} falls into hibernation.`,'yel');}else{G.companions=G.companions.filter(x=>x!==c);tlog(`${c.name} was consumed. Gone.`,'red');}}
-  setEvent(`COMBAT :: ${e.name}`,`Enemy HP: ${e.hp}/${e.hpMax}   ${c.name} HP: ${c.hp||0}/${c.hpMax}`,'attack  companion  offer  flee');renderStatusBar();autoSave();
+  const dmg=rand(e.level*4,e.level*8);c.hp=Math.max(0,c.hp-dmg);tlog(e.name+' strikes '+c.name+' -- '+dmg+' damage.','red');
+  if(c.hp<=0){
+    if(c.subtype==='ACTOR'){c.sleeping=true;c.hp=1;tlog(c.name+' falls into hibernation.','yel');}
+    else{if(G.psych&&G.psych.companionLost)G.psych.companionLost.push(c.name);G.companions=G.companions.filter(x=>x!==c);tlog(c.name+' was consumed. Gone.','red');}
+  }
+  setEvent('COMBAT :: '+e.name,'Enemy HP: '+e.hp+'/'+e.hpMax+'   '+c.name+' HP: '+(c.hp||0)+'/'+c.hpMax,'attack  companion  offer  flee');renderStatusBar();autoSave();
 }
-
-function cmdIgnore(){tlog('You move away. The presence dissolves.','gr');G.currentEnemy=null;G.inCombat=false;clearEvent();autoSave();scheduleEvent();}
+function cmdIgnore(){
+  if(G.psych)G.psych.ignores=(G.psych.ignores||0)+1;
+  tlog('You move away. The presence dissolves.','gr');G.currentEnemy=null;G.inCombat=false;clearEvent();autoSave();scheduleEvent();
+}
+function cmdPsychAnswer(isYes){
+  if(!G.psych||!G.psych.pendingQ){
+    tlog('Nothing to answer.','dim');return;
+  }
+  const q=G.psych.pendingQ;G.psych.pendingQ=null;
+  applyPsychAnswer(G.psych,q,isYes);
+  const uname=G.username.toUpperCase();
+  // Build response line
+  const topAttrs=getDominantAttrs(G.psych);
+  let response='';
+  const insult=getAttrInsult(G.psych);
+  // Unsettling reactions based on answer
+  if(isYes){
+    const yesResponses=[
+      '...yes. I thought so.',
+      'Of course you do.',
+      'That is what I expected from someone like you, '+uname+'.',
+      '...there it is.',
+      'I have seen that in everything you do here.',
+      'Your kind always answers that way.',
+      '...it was obvious.',
+      'The net already knew.',
+    ];
+    tlog(randFrom(yesResponses),'pur');
+  }else{
+    const noResponses=[
+      '...no. Interesting.',
+      'Is that what you tell yourself?',
+      'The denial is noted, '+uname+'.',
+      '...we will return to this.',
+      'That is what someone who does would say.',
+      'The hesitation before that answer said more.',
+      '...denial is its own kind of confession.',
+      'You answered quickly. Too quickly.',
+    ];
+    tlog(randFrom(noResponses),'pur');
+  }
+  // If we have insult from profile, deliver it after a pause
+  if(insult&&Math.random()<0.55){
+    setTimeout(()=>tlog(G.currentEnemy?G.currentEnemy.name+': "'+insult+'"':'"'+insult+'"','red'),900);
+  }
+  // Save the answer
+  if(!G.psych.answers)G.psych.answers={};
+  G.psych.answers[q.cat]=isYes?'yes':'no';
+  autoSave();
+  if(G.currentEnemy){
+    const e=G.currentEnemy;
+    setEvent('DIALOGUE :: '+e.name,'['+e.type+']['+e.subtype+'] -- profile updated.','recruit  attack  ignore  talk');
+  }
+}
 
 function cmdFeed(){
   if(!G.companions.length){tlog('No companions to feed.','dim');return;}
-  if(G.ether<10){tlog(`Not enough ether. Need 10, have ${G.ether}.`,'dim');return;}
+  if(G.ether<10){tlog('Not enough ether. Need 10, have '+G.ether+'.','dim');return;}
   G.ether-=10;G.companions.forEach(c=>{if(!c.immortalHunger)c.hunger=Math.min(100,c.hunger+30);});
   tlog('You channel ether to your companions. Hunger recedes.','cyn');renderStatusBar();autoSave();
 }
-
 function cmdAbandon(){
   if(!G.companions.length){tlog('No companions.','dim');return;}
-  showConfirmBox('ABANDON ALL COMPANIONS?',`${G.companions.map(c=>c.name).join(', ')}  -- Type "yes" to confirm.`,ans=>{
-    if(ans==='yes'||ans==='y'){G.companions.forEach(c=>tlog(`You abandon ${c.name}.`,'yel'));G.companions=[];renderStatusBar();autoSave();}
-    else tlog('Abandoned.','dim');
+  showConfirmBox('ABANDON ALL COMPANIONS?',G.companions.map(c=>c.name).join(', ')+'  -- Type "yes" to confirm.',ans=>{
+    if(ans==='yes'||ans==='y'){
+      G.companions.forEach(c=>{if(G.psych&&G.psych.abandoned)G.psych.abandoned.push(c.name);tlog('You abandon '+c.name+'.','yel');});
+      G.companions=[];renderStatusBar();autoSave();
+    }else tlog('Abandoned.','dim');
     showGameScreen();renderLogArea();renderAll();
   });
 }
 
-// ── INIT ──────────────────────────────────────────────────────────────────────
-// Show a loading message, then wait for PC9800 font before starting
-(function(){
-  const termEl2 = document.getElementById('terminal');
-  termEl2.style.fontFamily = "'PC9800', monospace";
-  // Write a loading row directly so player sees something
-  const loadDiv = document.createElement('div');
-  loadDiv.className = 'row';
-  loadDiv.style.color = '#555';
-  loadDiv.style.paddingTop = '220px';
-  loadDiv.style.textAlign = 'center';
-  loadDiv.textContent = 'loading font...';
-  termEl2.appendChild(loadDiv);
+// ── ORACLE SYSTEM ─────────────────────────────────────────────────────────────
+const ORACLE_INTROS=[
+  "...you want to know something.",
+  "I have been watching you for some time.",
+  "There are patterns in the way you move through this net.",
+  "I will not tell you what you want to hear. I will tell you what I observe.",
+  "Sit. If entities such as yourself can sit."
+];
+function cmdOracle(entity){
+  oracleEntity=entity||G.currentEnemy;
+  if(G.psych)G.psych.oracleVisits=(G.psych.oracleVisits||0)+1;
+  inputMode='oracle';clearScreen();
+  for(let r=1;r<ROWS-1;r++){setCell(r,0,'│','dim');setCell(r,COLS-1,'│','dim');}
+  for(let c=0;c<COLS;c++){setCell(0,c,'─','dim');setCell(ROWS-1,c,'─','dim');}
+  const nm=oracleEntity?oracleEntity.name:'???';
+  writeStr(0,2,' ORACLE :: '+nm+' ','pur');
+  writeStr(2,4,randFrom(ORACLE_INTROS),'gr');
+  writeStr(4,4,'Choose a depth of reading:','dim');
+  writeStr(6,4,'  surface    --  free     --  an impression','gr');
+  writeStr(7,4,'  channel    --  15 ether --  a deeper layer','gr');
+  writeStr(8,4,'  abyss      --  40 ether --  the full reading','gr');
+  writeStr(10,4,'(type: surface / channel / abyss / leave)','dim');
+  renderAll();renderInputRow();inp.focus();
+}
 
-  const font = new FontFace('PC9800',
-    "url('https://raw.githubusercontent.com/arsradiophonik/ArsRadiophonikGameRoom/main/pc-9800.ttf')"
-  );
+function handleOracleInput(val){
+  if(val==='leave'||val==='exit'||val==='back'){inputMode='game';showGameScreen();renderLogArea();renderAll();return;}
+  const p=G.psych||{};
+  let lines=[],cost=0,depth='';
+  if(val==='surface'){lines=buildProphecyLow(p);depth='SURFACE';}
+  else if(val==='channel'){
+    if(G.ether<15){clearRow(12);writeStr(12,4,'Not enough ether. Need 15, have '+G.ether+'.','red');renderRow(12);return;}
+    G.ether-=15;if(G.psych)G.psych.oraclePaid=(G.psych.oraclePaid||0)+15;
+    lines=buildProphecyMid(p);cost=15;depth='CHANNEL';
+  }else if(val==='abyss'){
+    if(G.ether<40){clearRow(12);writeStr(12,4,'Not enough ether. Need 40, have '+G.ether+'.','red');renderRow(12);return;}
+    G.ether-=40;if(G.psych)G.psych.oraclePaid=(G.psych.oraclePaid||0)+40;
+    lines=buildProphecyHigh(p);cost=40;depth='ABYSS';
+  }else{clearRow(12);writeStr(12,4,'surface / channel / abyss / leave','dim');renderRow(12);return;}
+  if(lines.length>0&&G.psych)G.psych.lastProphecy=lines[0];
+  autoSave();deliverProphecy(lines,depth,cost);
+}
+
+function buildProphecyLow(p){
+  const pool=[...BARNUM_UNI,...BARNUM_RAINBOW];
+  return pool.sort(()=>Math.random()-0.5).slice(0,2);
+}
+function buildProphecyMid(p){
+  const lines=[];
+  const total=Math.max(1,(p.attacks||0)+(p.flees||0)+(p.ignores||0));
+  if((p.flees||0)/total>0.4)lines.push("You flee more than you admit. But not as much as someone who truly wants to survive.");
+  else if((p.attacks||0)/total>0.6)lines.push("You strike before you think. The aggression protects something.");
+  else if((p.ignores||0)/total>0.4)lines.push("You ignore what you cannot control. You call it strategy.");
+  if(!(p.recruits>0))lines.push("You have traveled alone through all of this. Whether by choice or by reputation.");
+  else if(G.companions&&G.companions.length>2)lines.push("You surround yourself. And still the distance persists.");
+  if((p.etherSpent||0)>50)lines.push("You believe everything has a price. Even things that do not.");
+  if(G.level>10)lines.push("You have come far. And still the unease persists.");
+  if(G.ether>100)lines.push("You have accumulated much. There is still something you feel you lack.");
+  lines.push(randFrom(BARNUM_RAINBOW));
+  const shot=randFrom(SHOTGUN);lines.push(...shot);
+  return lines.slice(0,6);
+}
+function buildProphecyHigh(p){
+  const lines=[];
+  const uname=G.username.toUpperCase();
+  // Open with name
+  lines.push(uname+'.');
+  // Zodiac — used symbolically, never named
+  if(p.zodiac&&ZODIAC[p.zodiac]){
+    const z=ZODIAC[p.zodiac];
+    lines.push(z.sym+'  '+z.el+'.');
+    lines.push(randFrom(z.barnum));
+    if(p.gender&&z.gender){lines.push(z.gender[p.gender]||randFrom(z.barnum));}
+    lines.push('The '+z.kw[0]+' and the '+z.kw[1]+' have always competed in you.');
+    if(z.taunt)lines.push(randFrom(z.taunt));
+  }
+  // Attr-based profile insults (top 3 dominant)
+  const topAttrs=getDominantAttrs(p);
+  topAttrs.forEach(a=>{
+    if(ATTR_INSULTS[a])lines.push(randFrom(ATTR_INSULTS[a]));
+  });
+  // Specific behavioral callbacks
+  if(p.abandoned&&p.abandoned.length>0){
+    lines.push(p.abandoned[p.abandoned.length-1]+' still registers in the net. You left it there.');
+  }
+  if(p.companionLost&&p.companionLost.length>0){
+    lines.push('The one called '+p.companionLost[0]+' was consumed. Did you believe that would not leave a trace, '+uname+'?');
+  }
+  if(p.firstContact&&p.oracleVisits<=1){
+    lines.push('The first one you spoke to was '+p.firstContact+'. You remember what it said. So do we.');
+  }
+  if(p.mostFeared){
+    lines.push('You flee from '+p.mostFeared+' more than anything else here. '+uname+'. They know.');
+  }
+  if(p.sessionsPlayed>2){
+    lines.push('You have returned here '+p.sessionsPlayed+' times. The void counted every arrival.');
+  }
+  if(p.saveCount>12){
+    lines.push('You save your state constantly. As if that protects you. '+uname+'. Some losses cannot be rolled back.');
+  }
+  if(p.memoryLog&&p.memoryLog.length>0){
+    lines.push('You were asked: "'+p.memoryLog[0].slice(0,50)+'". You have not truly answered.');
+  }
+  if(p.answers&&Object.keys(p.answers).length>0){
+    const cats=Object.keys(p.answers);const cat=randFrom(cats);
+    const ans=p.answers[cat];
+    if(ans==='yes')lines.push('You admitted to '+cat+'. That will not leave this reading.');
+    else lines.push('You denied '+cat+'. The denial was noted.');
+  }
+  // Impossible knowledge
+  lines.push(randFrom(IMPOSSIBLE));
+  return lines.slice(0,10);
+}
+
+function spontaneousProphecy(e){
+  if(!G.psych)return;
+  const p=G.psych;let line;
+  if(p.abandoned&&p.abandoned.length>0)
+    line=e.name+' whispers: "'+p.abandoned[p.abandoned.length-1]+' still echoes in the net."';
+  else if(p.zodiac&&ZODIAC[p.zodiac])
+    line=e.name+': "'+randFrom(ZODIAC[p.zodiac].barnum)+'"';
+  else
+    line=e.name+': "'+randFrom(BARNUM_UNI)+'"';
+  tlog(line,'pur');
+  if(G.psych.memoryLog){G.psych.memoryLog.push(line);if(G.psych.memoryLog.length>8)G.psych.memoryLog.shift();}
+}
+
+// ── PROPHECY DELIVERY ─────────────────────────────────────────────────────────
+function deliverProphecy(lines,depth,cost){
+  inputMode='prophecy_delivery';
+  clearScreen();
+  for(let c=0;c<COLS;c++){setCell(0,c,'─','dim');setCell(ROWS-1,c,'─','dim');}
+  for(let r=1;r<ROWS-1;r++){setCell(r,0,'│','dim');setCell(r,COLS-1,'│','dim');}
+  const nm=oracleEntity?oracleEntity.name:'???';
+  writeStr(0,2,' PROPHECY :: '+nm+' // '+depth+' ','pur');
+  if(cost>0)writeStr(0,COLS-12,'-'+cost+' ETHER','dim');
+  oraclePropRows=[];let row=3;let qi=0;
+  function nextLine(){
+    if(qi>=lines.length){
+      writeStr(ROWS-2,2,'press ENTER to close','dim');renderAll();
+      inputMode='confirm';
+      _confirmCB=()=>{
+        inputMode='game';
+        if(oracleEntity&&G.currentEnemy===oracleEntity){
+          setEvent('DIALOGUE :: '+oracleEntity.name,'"'+(lines[0]||'').slice(0,58)+'"','recruit  attack  ignore');
+        }
+        showGameScreen();renderLogArea();renderAll();
+      };
+      return;
+    }
+    const line=lines[qi];qi++;
+    if(!line){row++;setTimeout(nextLine,200);return;}
+    if(row>=ROWS-3){
+      writeStr(ROWS-2,2,'... press ENTER ...','dim');renderAll();
+      inputMode='confirm';
+      _confirmCB=()=>{
+        inputMode='prophecy_delivery';
+        for(let r=3;r<ROWS-2;r++)clearRow(r);
+        row=3;
+        writeStr(0,2,' PROPHECY :: '+nm+' // '+depth+' ','pur');
+        renderAll();nextLine();
+      };
+      return;
+    }
+    writeProphecyLine(line,row,()=>{row++;setTimeout(nextLine,500);});
+  }
+  nextLine();
+}
+function writeProphecyLine(text,row,cb){
+  if(row>=ROWS-2){if(cb)cb();return;}
+  let i=0;const spd=text.length>50?8:13;clearRow(row);
+  function tick(){writeStr(row,3,text.slice(0,i+1),'pur');renderRow(row);i++;if(i<text.length)setTimeout(tick,spd);else if(cb)setTimeout(cb,280);}
+  tick();
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+(function(){
+  const loadDiv=document.createElement('div');
+  loadDiv.className='row';loadDiv.style.color='#333';
+  loadDiv.style.paddingTop='220px';loadDiv.style.textAlign='center';
+  loadDiv.textContent='loading font...';termEl.appendChild(loadDiv);
+  const font=new FontFace('PC9800',"url('https://raw.githubusercontent.com/arsradiophonik/ArsRadiophonikGameRoom/main/pc-9800.ttf')");
   font.load().then(function(loaded){
-    document.fonts.add(loaded);
-    termEl2.removeChild(loadDiv);
-    inp.focus();
-    showBoot();
+    document.fonts.add(loaded);termEl.removeChild(loadDiv);inp.focus();showBoot();
   }).catch(function(){
-    // Font failed — still start the game, but inform
-    termEl2.removeChild(loadDiv);
-    inp.focus();
-    showBoot();
+    termEl.removeChild(loadDiv);inp.focus();showBoot();
   });
 })();
 </script>
