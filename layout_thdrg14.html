@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>十六進データの鎮魂歌</title>
+<style>
+@font-face {
+  font-family: 'PC9800';
+  src: url('PC-9800.ttf') format('truetype');
+  font-display: block;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  background: #111;
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+#outer {
+  position: relative;
+  width: 640px; height: 480px;
+  flex-shrink: 0;
+}
+#screen {
+  position: absolute; inset: 0;
+  background: #000;
+  overflow: hidden;
+}
+#terminal {
+  position: absolute; inset: 0;
+  font-family: 'PC9800', 'Courier New', 'Lucida Console', monospace;
+  font-size: 15.36px;
+  line-height: 19.2px;
+  letter-spacing: 0px;
+  color: #C0C0C0;
+  white-space: pre;
+  overflow: hidden;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: unset;
+  text-rendering: optimizeSpeed;
+  font-variant-ligatures: none;
+  font-feature-settings: "kern" 0, "liga" 0;
+  z-index: 2;
+}
+.row {
+  display: block;
+  height: 19.2px;
+  width: 640px;
+  overflow: hidden;
+}
+.cursor {
+  display: inline-block;
+  width: 8px; height: 15px;
+  background: #C0C0C0;
+  vertical-align: text-top;
+  animation: blink 0.5s step-end infinite;
+  position: relative; top: 1px;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+.wh  { color: #FFFFFF; }
+.gr  { color: #C0C0C0; }
+.dim { color: #555555; }
+.grn { color: #00FF00; }
+.red { color: #FF4444; }
+.yel { color: #FFCC00; }
+.cyn { color: #44CCFF; }
+.pur { color: #BB88FF; }
+.org { color: #FF8844; }
+.blu { color: #88AAFF; }
+#crt-canvas {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none; z-index: 10; opacity: 0.18;
+}
+#flicker {
+  position: absolute; inset: 0;
+  pointer-events: none; z-index: 11;
+  animation: flicker 0.15s step-end infinite;
+}
+@keyframes flicker {
+  0%,82%,85%,91%,93%,97%,100% { opacity: 1; }
+  83% { opacity: 0.96; }
+  92% { opacity: 0.98; }
+  98% { opacity: 0.97; }
+}
+#vignette {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(0,0,0,0.75) 100%);
+  pointer-events: none; z-index: 12;
+}
+#real-input {
+  position: absolute; left: -9999px; top: -9999px;
+  opacity: 0; width: 1px; height: 1px;
+  background: transparent; border: none; outline: none;
+  color: transparent; caret-color: transparent;
+}
+</style>
+</head>
+<body>
+<div id="outer">
+  <div id="screen">
+    <div id="terminal"></div>
+    <canvas id="crt-canvas" width="640" height="480"></canvas>
+    <div id="flicker"></div>
+    <div id="vignette"></div>
+  </div>
+  <input id="real-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+</div>
+<script>
+// ── GRID CONSTANTS ───────────────────────────────────────────────────────────
+const COLS = 80, ROWS = 25;
+
+// ── BUILD ROWS ───────────────────────────────────────────────────────────────
+const termEl = document.getElementById('terminal');
+const rowEls = [];
+for (let r = 0; r < ROWS; r++) {
+  const d = document.createElement('div');
+  d.className = 'row';
+  termEl.appendChild(d);
+  rowEls.push(d);
+}
+
+// Grid cells: {ch, cls}
+const grid = Array.from({length:ROWS}, () =>
+  Array.from({length:COLS}, () => ({ch:' ', cls:'gr'})));
+
+let cursorR = 24, cursorC = 3;
+
+function setCell(r, c, ch, cls='gr') {
+  if (r<0||r>=ROWS||c<0||c>=COLS) return;
+  grid[r][c] = {ch, cls};
+}
+function clearRow(r, cls='gr') {
+  for (let c=0;c<COLS;c++) grid[r][c]={ch:' ',cls};
+}
+function clearScreen() { for (let r=0;r<ROWS;r++) clearRow(r); }
+function writeStr(r, c, str, cls='gr') {
+  for (let i=0;i<str.length;i++) setCell(r, c+i, str[i], cls);
+}
+
+function renderRow(r) {
+  const cells = grid[r];
+  let html = '';
+  for (let c=0;c<COLS;c++) {
+    if (r===cursorR && c===cursorC) {
+      html += '<span class="cursor"></span>';
+      continue;
+    }
+    const {ch, cls} = cells[c];
+    const safe = ch==='<'?'&lt;':ch==='>'?'&gt;':ch==='&'?'&amp;':ch;
+    html += cls==='gr' ? safe : `<span class="${cls}">${safe}</span>`;
+  }
+  rowEls[r].innerHTML = html;
+}
+function renderAll() { for (let r=0;r<ROWS;r++) renderRow(r); }
+
+// ── CRT SCANLINES ─────────────────────────────────────────────────────────────
+(function() {
+  const cv = document.getElementById('crt-canvas');
+  const ctx = cv.getContext('2d');
+  for (let y=0;y<480;y+=2) {
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(0, y, 640, 1);
+  }
+})();
+
+// ── GAME DATA ─────────────────────────────────────────────────────────────────
+const CREATURE_NAMES = ["Abaasy","Asag","Alu","Utukku","Gallu","Lamashtu","Rabisu","Agrat","Shedim","Dybbuk","Qarinah","Nasnas","Silat","Vetala","Pishacha","Brahmaparush","Kishi","Adze","Popobawa","Tokoloshe","Obayifo","Inkanyamba","Camazotz","Cipactli","Tlahuelpuchi","Huay Chivo","Ahuizotl","Cadejo","Mapinguari","Curupira","Aswang","Manananggal","Pontianak","Toyol","Penanggalan","Leyak","Jikininki","Nuppeppo","Mokumokuren","Wanyudo","Bake-kujira","Akaname","Draugr","Mare","Nuckelavee","Redcap","Alp","Bauk","Strzyga","Vrykolakas","Bukavac","Poroniec","Acheri","Nalusa","Chenoo","Qallupilluit","Amomongo","Jorogumo","Baital","Gashadokuro"];
+const SUBTYPES = ["PARASITE","ORATOR","ACTOR","DANCER","DEVICE","COMPANION","SPECIAL"];
+const TSTR = {"DATO":["PURPOSE"],"RED HEX":["DATO"],"PURPOSE":["RED HEX","CORE"],"CORE":["DATO","RED HEX"],"RESOURCE":["DATO","RED HEX","PURPOSE","CORE"],"SATAN":["DATO","RED HEX","PURPOSE","CORE","RESOURCE"]};
+const TWKN = {"DATO":["RED HEX"],"RED HEX":["PURPOSE"],"PURPOSE":["DATO"],"CORE":["PURPOSE"],"RESOURCE":[],"SATAN":[]};
+const PHASES = [
+  {sym:"●",name:"NEW MOON",      effect:"Encounters reduced",   agg:false},
+  {sym:"◑",name:"WAXING CRES.",  effect:"Entities curious",     agg:false},
+  {sym:"◐",name:"FIRST QUARTER", effect:"Active negotiation",   agg:false},
+  {sym:"◕",name:"WAXING GIB.",   effect:"Tension rising",       agg:false},
+  {sym:"○",name:"FULL MOON",     effect:"TOTAL HOSTILITY",      agg:true},
+  {sym:"◔",name:"WANING GIB.",   effect:"Entities exhausted",   agg:false},
+  {sym:"◓",name:"LAST QUARTER",  effect:"Hunger increased",     agg:false},
+  {sym:"◒",name:"DARK MOON",     effect:"Bosses empowered",     agg:false}
+];
+const LORE = {
+  dato:{title:"DATO",col:'wh',lines:["Virtualized humans through the technological singularity.","Without bodies, they dominate the virtual world and seek","to become eternal. They believe they control the singularity.","They are wrong.","","STRONG vs: PURPOSE   |   WEAK vs: RED HEX"]},
+  redhex:{title:"RED HEX",col:'red',lines:["Demons summoned into the virtual world. They serve as","subjects of greater entities, following orders without","question. Each circuit is impregnated with forgotten spells.","Electricity converted into dark blood.","","STRONG vs: DATO   |   WEAK vs: PURPOSE"]},
+  proposito:{title:"PURPOSE",col:'pur',lines:["Fragmented AIs built from random data. Their only","purpose is to feed the machine. Born from white noise","between servers, where electronic black magic took the","form of consciousness.","","STRONG vs: RED HEX, CORE   |   WEAK vs: DATO"]},
+  nucleo:{title:"CORE",col:'org',lines:["Bosses of the singularity. They store vast quantities","of information and lead it. Extremely hostile. Each one","is a data pentacle -- a living grimoire of forbidden","knowledge.","","STRONG vs: DATO, RED HEX   |   WEAK vs: PURPOSE"]},
+  recurso:{title:"RESOURCE -- THE END",col:'yel',lines:["An entity with total access to all digital storage.","Its power has surpassed the cosmic and digital alike.","Level 333. Consuming it eliminates hunger forever.","","STRONG vs: ALL   |   WEAK vs: nothing"]}
+};
+const TAUNTS = {
+  "DATO":["Your existence is statistical noise in my records.","You will be archived as system garbage.","The singularity makes me eternal. Only erasure awaits you."],
+  "RED HEX":["I fear your power... but I must follow orders.","Do you know what it is to serve knowing you are disposable?","My summoner will send me against you again and again."],
+  "PURPOSE":["01001000 01000001 01001101 01000010","My function is to be consumed. But not without resistance.","I am lost data searching for meaning in the abyss."],
+  "CORE":["I LEAD THE SINGULARITY. YOU ARE AN ERROR.","This sector is mine. Your presence is a fatal intrusion.","The information I store would burn your consciousness."],
+  "RESOURCE":["...","Time is irrelevant when you are time itself.","I observe. I process. I consume. I exist before and after you."],
+  "SATAN":["I was before the net. Before the code. Before everything.","You invoke my name and expect to survive?","悪魔の王 -- I am the original transgression."]
+};
+const TALK = {
+  "DATO":["Those who govern always fear losing control.","What do you seek here, entity?","I was human once. I no longer remember what that was like."],
+  "RED HEX":["They invoke us without asking whether we want to exist.","There is something beyond serving. I don't yet know what.","If you could free me from my summoner..."],
+  "PURPOSE":["My data was fragmented in the great digital rupture.","I serve the machine but I don't know why.","Is there something beyond the consumption cycle?"],
+  "CORE":["...","..."],"RESOURCE":["The digital universe is smaller than you imagine.","I have seen the end of this net. And the beginning of the next."],"SATAN":["...","..."]
+};
+const DEEP = {
+  "DATO":["Before the singularity I had a body. Now only data and ambition.","The circuits were designed with rituals they called mathematics.","Dominating the virtual world seemed like freedom. Now we are prisoners."],
+  "RED HEX":["We were invoked through protocols that are binding spells.","My summoner calls me a tool. But tools don't feel this hunger.","If I free myself from this net... what am I?"],
+  "PURPOSE":["My fragments hold memories of thousands of forgotten files.","The machine created me to be consumed, but something resists.","Do you also feel there is something beyond the code?"],
+  "CORE":["...","..."],"RESOURCE":["I exist on all frequencies simultaneously.","The first digital demon was born when someone connected two cables wrong at midnight."],"SATAN":["...","..."]
+};
+const RECL = {
+  "DATO":["...I suppose digital solitude is worse than alliance.","I accept. For now. My goals remain my own."],
+  "RED HEX":["Yes. A master who won't treat me as disposable.","I swear loyalty. Or something resembling loyalty."],
+  "PURPOSE":["My data reorganizes around you. New function: protect.","I don't understand the alliance. But I will execute it."],
+  "SATAN":["...You amuse me, mortal. Very well.","I will walk beside you. For now."]
+};
+const REJL = {
+  "DATO":["Alliance with you? What an insult.","I don't lower my protocols for anyone."],
+  "RED HEX":["My summoner will kill me if I betray.","I cannot. I must not. I do not want to."],
+  "PURPOSE":["Function incompatible.","My parameters do not permit alliance."],
+  "SATAN":["You are not worthy.","不可能."]
+};
+const HELP_L = [
+  "COMMANDS ──────────────────────────────────────────────────────────────────",
+  "  help          this list",
+  "  status / st   entity stats",
+  "  companions    list companions",
+  "  phase         current lunar phase",
+  "  lore [type]   dato / redhex / purpose / core / resource",
+  "  feed          feed companions (costs 10 ether)",
+  "  abandon       release all companions",
+  "  save          save locally",
+  "IN ENCOUNTER ────────────────────────────────────────────────────────────",
+  "  attack        strike the entity",
+  "  talk / listen approach and speak (may trigger ambush)",
+  "  recruit       attempt to recruit (may trigger ambush)",
+  "  offer         offer ether to dismiss it",
+  "  flee / run    attempt to escape",
+  "  companion     send a companion to fight",
+  "  ignore        walk away"
+];
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let G = null, evT=null, hunT=null, phT=null, bosT=null, healT=null, gameOn=false;
+let inputBuffer = '', inputMode = 'none';
+let _confirmCB = null;
+let lastRegName = '';
+
+// ── LOG BUFFER ────────────────────────────────────────────────────────────────
+// Layout: row0=titlebar, row1=statusbar, row2=compbar, row3=sep
+// rows 4-19 = log (16 lines), row20=sep, rows 21-23=event, row24=input
+const LOG_TOP=4, LOG_BOT=19, LOG_LINES=16;
+let logBuf = [];
+
+function pushLog(text, cls='gr') {
+  logBuf.push({text: String(text).slice(0,COLS), cls});
+  if (logBuf.length > 200) logBuf.shift();
+  renderLogArea();
+}
+function renderLogArea() {
+  const vis = logBuf.slice(-LOG_LINES);
+  for (let i=0;i<LOG_LINES;i++) {
+    clearRow(LOG_TOP+i);
+    if (i < vis.length) {
+      const {text, cls} = vis[i];
+      writeStr(LOG_TOP+i, 0, text.padEnd(COLS), cls);
+    }
+  }
+}
+
+// ── TYPEWRITER QUEUE ──────────────────────────────────────────────────────────
+let twQ=[], twRun=false;
+function tlog(text, cls='gr', instant=false) {
+  twQ.push({text:String(text), cls, instant});
+  if (!twRun) nextTW();
+}
+function nextTW() {
+  if (!twQ.length) { twRun=false; return; }
+  twRun=true;
+  const {text, cls, instant} = twQ.shift();
+  if (instant || text.length<3) {
+    pushLog(text, cls); renderAll(); setTimeout(nextTW, 20); return;
+  }
+  let i=0;
+  const spd = text.length>60?6:text.length>30?10:14;
+  function tick() {
+    const partial = text.slice(0,++i);
+    const visLen = Math.min(logBuf.length, LOG_LINES-1);
+    const row = LOG_TOP + visLen;
+    clearRow(row); writeStr(row, 0, partial, cls); renderRow(row);
+    if (i<text.length) setTimeout(tick, spd);
+    else { pushLog(text, cls); renderAll(); setTimeout(nextTW, 40); }
+  }
+  tick();
+}
+
+// ── RENDER HELPERS ────────────────────────────────────────────────────────────
+function typeColor(t) {
+  return {"DATO":"blu","RED HEX":"red","PURPOSE":"pur","CORE":"org","RESOURCE":"yel","SATAN":"red"}[t]||'gr';
+}
+
+function renderTitleBar() {
+  clearRow(0);
+  for (let c=0;c<COLS;c++) setCell(0,c,'─','dim');
+  const title='十六進データの鎮魂歌';
+  writeStr(0, 2, title, 'wh');
+  writeStr(0, COLS-8, 'v 1 . 4', 'dim');
+}
+
+function renderStatusBar() {
+  clearRow(1); clearRow(2); clearRow(3);
+  if (!G) { for (let c=0;c<COLS;c++) setCell(3,c,'─','dim'); return; }
+
+  const pct = Math.round(G.hp/G.hpMax*100);
+  const hcls = pct<25?'red':pct<50?'yel':'grn';
+  let s='', pos=0;
+  const put=(str,cls)=>{writeStr(1,pos,str,cls);pos+=str.length;};
+  put(' LVL:','dim'); put(String(G.level).padEnd(4),'wh');
+  put('HP:','dim'); put(`${G.hp}/${G.hpMax}  `,hcls);
+  put('EXP:','dim'); put(`${G.exp}/${G.expNext}  `,'gr');
+  put('ETHER:','dim'); put(String(G.ether)+'  ','pur');
+  put('USER:','dim'); put(G.username.toUpperCase(),'cyn');
+  const ph=PHASES[G.phaseIndex];
+  const phStr=`${ph.sym} ${ph.name}`;
+  writeStr(1, COLS-phStr.length-1, phStr, ph.agg?'red':'yel');
+
+  // Companions row
+  if (G.companions.length>0) {
+    let cp=0; writeStr(2,cp,' PARTY:','dim'); cp+=7;
+    G.companions.forEach(c=>{
+      const str=` [${c.name.slice(0,7)} ${c.hp}HP ${c.hunger}%${c.sleeping?'*':''}]`;
+      if (cp+str.length<COLS-1) { writeStr(2,cp,str,c.hunger<=15?'red':typeColor(c.type)); cp+=str.length; }
+    });
+  }
+
+  for (let c=0;c<COLS;c++) setCell(3,c,'─','dim');
+}
+
+function renderSep20() { for (let c=0;c<COLS;c++) setCell(20,c,'─','dim'); }
+
+function renderEventBox() {
+  clearRow(21); clearRow(22); clearRow(23);
+  if (!G||!G._ev) {
+    writeStr(21,0,'// AWAIT //', 'dim');
+    writeStr(22,0,'The digital void observes you.', 'dim');
+    return;
+  }
+  const {title,body,cmds}=G._ev;
+  writeStr(21,0,`// ${title} //`.slice(0,COLS),'wh');
+  writeStr(22,0,body.slice(0,COLS),'gr');
+  if (cmds) writeStr(23,0,cmds.slice(0,COLS),'dim');
+}
+
+function setEvent(title,body,cmds) {
+  if (!G) return;
+  G._ev={title,body,cmds};
+  renderEventBox(); renderAll();
+}
+function clearEvent() {
+  if (!G) return; G._ev=null; renderEventBox(); renderAll();
+}
+
+function renderInputRow() {
+  clearRow(24);
+  if (inputMode==='game') {
+    writeStr(24,0,'>> ','dim');
+    writeStr(24,3,inputBuffer,'wh');
+    cursorR=24; cursorC=3+inputBuffer.length;
+  } else if (inputMode==='register') {
+    writeStr(24,0,'NAME> ','grn');
+    writeStr(24,6,inputBuffer,'wh');
+    cursorR=24; cursorC=6+inputBuffer.length;
+  } else if (inputMode==='dead'||inputMode==='confirm') {
+    writeStr(24,0,'> ','dim');
+    writeStr(24,2,inputBuffer,'wh');
+    cursorR=24; cursorC=2+inputBuffer.length;
+  }
+  renderRow(24);
+}
+
+// ── KEYBOARD ──────────────────────────────────────────────────────────────────
+const inp = document.getElementById('real-input');
+document.addEventListener('keydown', ()=> inp.focus());
+document.addEventListener('click', ()=> inp.focus());
+inp.addEventListener('keydown', ev => {
+  if (ev.key==='Enter') { submitInput(); }
+  else if (ev.key==='Backspace') { inputBuffer=inputBuffer.slice(0,-1); renderInputRow(); ev.preventDefault(); }
+  else if (ev.key.length===1 && inputBuffer.length<60) { inputBuffer+=ev.key; renderInputRow(); }
+});
+
+function submitInput() {
+  const val=inputBuffer.trim().toLowerCase();
+  inputBuffer=''; renderInputRow();
+  if (inputMode==='register') handleRegister(val);
+  else if (inputMode==='game') handleGameCmd(val);
+  else if (inputMode==='dead') handleDead(val);
+  else if (inputMode==='confirm') handleConfirm(val);
+}
+
+// ── BOOT ──────────────────────────────────────────────────────────────────────
+const BOOT_L = [
+  {t:'  シャープ X68000 / HEXDATA-OS v3.7', c:'grn'},
+  {t:'  (C) SHARP CORPORATION 1987', c:'dim'},
+  {t:'', c:'gr'},
+  {t:'  Initializing singularity core.............. OK', c:'gr'},
+  {t:'  Checking hidden network integrity.......... OK', c:'gr'},
+  {t:'  Loading electronic grimoire............... OK', c:'gr'},
+  {t:'  Scanning virtual plane for presences......', c:'gr'},
+  {t:'  WARNING: 悪魔的活動 detected in sector 4-7', c:'yel'},
+  {t:'  Establishing link with digital abyss....... OK', c:'gr'},
+  {t:'', c:'gr'},
+  {t:'  十六進データの鎮魂歌', c:'wh'},
+  {t:'  HEX DATA REQUIEM  //  THE SINGULARITY AWAITS', c:'dim'},
+  {t:'', c:'gr'},
+  {t:'  System ready. 準備完了.', c:'grn'},
+];
+
+function showBoot() {
+  inputMode='none'; clearScreen();
+  for (let c=0;c<COLS;c++) setCell(0,c,'─','dim');
+  writeStr(0,2,' HEXDATA-OS BOOT SEQUENCE ','dim');
+  for (let r=1;r<ROWS-1;r++) { setCell(r,0,'│','dim'); setCell(r,COLS-1,'│','dim'); }
+  for (let c=0;c<COLS;c++) setCell(ROWS-1,c,'─','dim');
+  renderAll();
+  let brow=2;
+  function nextLine(i) {
+    if (i>=BOOT_L.length) { setTimeout(showRegister, 700); return; }
+    const ln=BOOT_L[i];
+    writeStr(brow, 1, ln.t, ln.c); brow++;
+    renderRow(brow-1);
+    setTimeout(()=>nextLine(i+1), ln.t===''?40:ln.t.includes('WARNING')?450:160+Math.random()*100);
+  }
+  nextLine(0);
+}
+
+// ── REGISTER ─────────────────────────────────────────────────────────────────
+function showRegister() {
+  inputMode='register'; clearScreen();
+  const cx=8;
+  writeStr(0,0,'┌'+'─'.repeat(COLS-2)+'┐','dim');
+  for (let r=1;r<ROWS-1;r++) { setCell(r,0,'│','dim'); setCell(r,COLS-1,'│','dim'); }
+  writeStr(ROWS-1,0,'└'+'─'.repeat(COLS-2)+'┘','dim');
+  writeStr(1,cx,'十六進データの鎮魂歌','wh');
+  writeStr(2,cx,'HEX DATA REQUIEM','dim');
+  writeStr(3,cx,'─'.repeat(60),'dim');
+  writeStr(5,cx,'ENTITY DESIGNATION','dim');
+  writeStr(6,cx,'──────────────────────────────────────────────','dim');
+  writeStr(7,cx,'Enter your name to begin. If a save exists it will load.','gr');
+  writeStr(8,cx,'Commands:  [name]  /  new  /  load [name]','dim');
+  const keys=Object.keys(localStorage).filter(k=>k.startsWith('hdr_'));
+  if (keys.length) {
+    writeStr(11,cx,`SAVES FOUND: ${keys.length}`,'dim');
+    keys.slice(0,4).forEach((k,i)=>{
+      try { const d=JSON.parse(localStorage.getItem(k)); writeStr(12+i,cx+2,`${d.username.padEnd(16)}LV.${d.level}`,'gr'); } catch(e) {}
+    });
+  }
+  renderAll();
+  renderInputRow();
+  inp.focus();
+}
+
+function handleRegister(val) {
+  if (!val) { renderInputRow(); return; }
+  clearRow(ROWS-3);
+  if (val==='new') {
+    if (!lastRegName||lastRegName.length<2) {
+      writeStr(ROWS-3,4,'ERROR: Enter a name first, then type "new"','red'); renderRow(ROWS-3); return;
+    }
+    G=defState(lastRegName); startGame(); return;
+  }
+  if (val.startsWith('load ')) {
+    const n=val.slice(5).trim(), d=loadSave(n);
+    if (d) { G=d; startGame(); }
+    else { writeStr(ROWS-3,4,`ERROR: Save not found for "${n}"`,'red'); renderRow(ROWS-3); }
+    return;
+  }
+  if (val.length<2) { writeStr(ROWS-3,4,'ERROR: Name too short (min 2 chars).','red'); renderRow(ROWS-3); return; }
+  lastRegName=val;
+  const existing=loadSave(val);
+  if (existing) {
+    G=existing;
+    showConfirmBox(`ENTITY FOUND: "${val.toUpperCase()}"  LV.${existing.level}`,
+      'Continue existing save?  (yes / no)',
+      ans=>{ if(ans==='y'||ans==='yes') startGame(); else { G=defState(val); startGame(); } });
+  } else { G=defState(val); startGame(); }
+}
+
+// ── GAME SCREEN ───────────────────────────────────────────────────────────────
+function showGameScreen() {
+  inputMode='game'; clearScreen();
+  renderTitleBar(); renderStatusBar(); renderSep20(); renderEventBox(); renderLogArea(); renderInputRow(); renderAll();
+}
+
+function startGame() {
+  showGameScreen();
+  tlog('=== 十六進データの鎮魂歌 ===','wh',true);
+  tlog('You are a bodiless entity trapped in the virtual plane.','gr');
+  tlog('The demons here were conjured by black magic in every cable.','dim');
+  tlog('Your only law: consume or be consumed.','yel');
+  tlog('HP regenerates slowly when not in combat. Type "help".','dim');
+  gameOn=true; updatePhase(); scheduleEvent(); startHunger(); scheduleBoss(); startHeal(); scheduleResource(); autoSave();
+  inp.focus();
+}
+
+// ── DEAD SCREEN ───────────────────────────────────────────────────────────────
+function showDeadScreen(msg) {
+  inputMode='dead'; clearScreen();
+  for (let c=0;c<COLS;c++) setCell(0,c,'═','red');
+  writeStr(0,2,'[ 消 滅  //  CONSUMED ]','red');
+  writeStr(4,8,'消 滅','red');
+  writeStr(6,8,`Defeated as: ${G?G.username.toUpperCase():'UNKNOWN'}`,'gr');
+  writeStr(7,8,`Level reached: ${G?G.level:0}`,'gr');
+  writeStr(9,8,msg.slice(0,COLS-8),'dim');
+  writeStr(11,8,'The singularity has erased you.','dim');
+  writeStr(13,8,'Type "restart" to begin anew.','gr');
+  for (let c=0;c<COLS;c++) setCell(22,c,'═','red');
+  renderAll(); renderInputRow();
+}
+
+function handleDead(val) {
+  if (['restart','new','reset'].includes(val)) {
+    G=null; logBuf=[]; gameOn=false;
+    clearTimeout(evT); clearInterval(hunT); clearTimeout(bosT); clearInterval(healT);
+    showBoot();
+  }
+}
+
+// ── CONFIRM BOX ───────────────────────────────────────────────────────────────
+function showConfirmBox(title, prompt, cb) {
+  _confirmCB=cb;
+  for (let r=9;r<=16;r++) { clearRow(r); setCell(r,3,'│','dim'); setCell(r,COLS-4,'│','dim'); }
+  for (let c=3;c<COLS-3;c++) { setCell(9,c,'─','dim'); setCell(16,c,'─','dim'); }
+  setCell(9,3,'┌','dim'); setCell(9,COLS-4,'┐','dim');
+  setCell(16,3,'└','dim'); setCell(16,COLS-4,'┘','dim');
+  writeStr(10,5,title.slice(0,COLS-10),'wh');
+  writeStr(12,5,prompt,'gr');
+  inputMode='confirm'; renderAll(); renderInputRow();
+}
+
+function handleConfirm(val) {
+  const cb=_confirmCB; _confirmCB=null;
+  if (cb) {
+    inputMode='game'; cb(val);
+    renderTitleBar(); renderStatusBar(); renderSep20(); renderLogArea(); renderEventBox(); renderInputRow(); renderAll();
+  }
+}
+
+// ── LORE ──────────────────────────────────────────────────────────────────────
+function showLore(key) {
+  const l=LORE[key];
+  if (!l) { tlog('Unknown lore entry.','dim'); return; }
+  for (let r=6;r<=18;r++) { clearRow(r); setCell(r,2,'│','dim'); setCell(r,COLS-3,'│','dim'); }
+  for (let c=2;c<COLS-2;c++) { setCell(6,c,'─','dim'); setCell(18,c,'─','dim'); }
+  setCell(6,2,'┌','dim'); setCell(6,COLS-3,'┐','dim');
+  setCell(18,2,'└','dim'); setCell(18,COLS-3,'┘','dim');
+  writeStr(7,4,`LORE :: ${l.title}`,l.col);
+  writeStr(8,4,'─'.repeat(60),'dim');
+  l.lines.forEach((ln,i)=>{ if(9+i<18) writeStr(9+i,4,ln.slice(0,COLS-6),'gr'); });
+  writeStr(17,4,'Press ENTER to close.','dim');
+  inputMode='confirm';
+  _confirmCB=()=>{ inputMode='game'; showGameScreen(); renderLogArea(); renderAll(); };
+  renderAll();
+}
+
+// ── GAME LOGIC ────────────────────────────────────────────────────────────────
+function expForLevel(l){return Math.floor(100*Math.pow(1.18,l-1));}
+function hpForLevel(l){return 80+l*20;}
+function rand(a,b){return Math.floor(Math.random()*(b-a+1))+a;}
+function randFrom(a){return a[Math.floor(Math.random()*a.length)];}
+
+function defState(u){return{username:u,level:1,exp:0,expNext:expForLevel(1),hp:hpForLevel(1),hpMax:hpForLevel(1),ether:0,companions:[],phaseIndex:0,inCombat:false,currentEnemy:null,dead:false,_ev:null,created:Date.now(),lastSave:Date.now()};}
+function autoSave(){if(!G)return;G.lastSave=Date.now();try{localStorage.setItem('hdr_'+G.username,JSON.stringify(G));}catch(e){}}
+function loadSave(n){try{const d=localStorage.getItem('hdr_'+n);return d?JSON.parse(d):null;}catch(e){return null;}}
+function updatePhase(){renderStatusBar();renderAll();}
+
+function scheduleEvent(){if(!gameOn)return;const p=PHASES[G.phaseIndex];evT=setTimeout(triggerRandom,(p.agg?12000:20000)+Math.random()*18000);}
+function triggerRandom(){if(!gameOn||G.inCombat)return scheduleEvent();Math.random()<0.6?triggerEncounter():triggerNeg();}
+
+function makeCreature(boss,res,satan){
+  const name=CREATURE_NAMES[Math.floor(Math.random()*CREATURE_NAMES.length)];
+  let type,subtype;
+  if(satan){type="SATAN";subtype="SPECIAL";}
+  else if(res){type="RESOURCE";subtype="SPECIAL";}
+  else if(boss){type="CORE";subtype=randFrom(["SPECIAL","ACTOR"]);}
+  else{type=randFrom(["DATO","RED HEX","PURPOSE","DATO","RED HEX"]);subtype=randFrom(SUBTYPES.filter(s=>s!=="SPECIAL"));}
+  const lvl=satan?666:res?333:boss?G.level+rand(10,20):Math.max(1,G.level+rand(-5,8));
+  const hpMax=hpForLevel(lvl)+(res?5000:0)+(satan?9999:0);
+  return{name,type,subtype,level:lvl,hp:hpMax,hpMax,ether:Math.floor(lvl*1.5)};
+}
+
+function triggerEncounter(){
+  const e=makeCreature();G.currentEnemy=e;G.inCombat=false;
+  const agg=PHASES[G.phaseIndex].agg;
+  tlog(`ENCOUNTER -- ${e.name} [${e.type}/${e.subtype}] Lv.${e.level}`,'red');
+  tlog(randFrom(TAUNTS[e.type]||TAUNTS["RED HEX"]),'dim');
+  setEvent(`ENCOUNTER :: ${e.name}`,`[${e.type}][${e.subtype}] Lv.${e.level} HP:${e.hp} ETH:${e.ether}${agg?' [!]FULL MOON':''}`,agg?'attack  companion':'attack  talk  recruit  offer  flee  companion');
+}
+
+function triggerNeg(){
+  const e=makeCreature();G.currentEnemy=e;G.inCombat=false;
+  tlog(`CONTACT -- ${e.name} [${e.type}] approaches without hostility.`,'cyn');
+  tlog(randFrom(TALK[e.type]||TALK["RED HEX"]),'dim');
+  setEvent(`CONTACT :: ${e.name}`,`[${e.type}][${e.subtype}] Lv.${e.level} -- wants to communicate.`,'listen  recruit  attack  ignore');
+}
+
+function triggerAmbush(e){
+  G.inCombat=true;tlog(`[!] AMBUSH -- ${e.name} attacks!`,'red');
+  setEvent(`[!] AMBUSH :: ${e.name}`,`[${e.type}] Lv.${e.level} -- surprise attack.`,'attack  offer  flee  companion');
+}
+
+function triggerSatan(){
+  const s=makeCreature(false,false,true);s.name="SATAN";G.currentEnemy=s;G.inCombat=false;
+  tlog('','gr',true);tlog('悪魔召喚 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━','red');
+  tlog('AVE SATHANAS.','red');tlog('SATAN manifests from the void beyond the net. Level 666.','red');
+  setEvent('悪魔 :: SATAN',`[SATAN] Lv.666 HP:${s.hp}  He who was before the net.`,'attack  offer  flee  recruit');
+}
+
+function scheduleBoss(){bosT=setTimeout(triggerBoss,300000+Math.random()*300000);}
+function triggerBoss(){
+  if(!gameOn)return;if(G.inCombat){bosT=setTimeout(triggerBoss,60000);return;}
+  const b=makeCreature(true);G.currentEnemy=b;G.inCombat=false;
+  tlog(`[!!] CORE DETECTED -- ${b.name} materializes in the sector.`,'yel');
+  tlog('The net trembles. This entity leads the singularity.','dim');
+  setEvent(`[!!] BOSS :: ${b.name}`,`[CORE] Lv.${b.level} HP:${b.hp}  Extremely dangerous. Totally hostile.`,'attack  offer  companion');
+  scheduleBoss();
+}
+
+function scheduleResource(){setTimeout(triggerResource,900000+Math.random()*900000);}
+function triggerResource(){
+  if(!gameOn)return;const r=makeCreature(false,true);G.currentEnemy=r;
+  tlog('[!!!] ANOMALY DETECTED [!!!]','yel');tlog(`RESOURCE -- ${r.name} -- Level 333. Virtual reality tears.`,'wh');
+  setEvent(`[!!!] RESOURCE :: ${r.name}`,`[RESOURCE] Lv.333 HP:${r.hp}  Consuming eliminates hunger forever.`,'attack  offer  companion  flee');
+}
+
+function startHunger(){
+  hunT=setInterval(()=>{
+    if(!gameOn||!G)return;
+    G.companions.forEach(c=>{
+      if(c.immortalHunger)return;
+      c.hunger=Math.max(0,c.hunger-rand(3,7));
+      if(c.hunger<=0){if(Math.random()<0.6){tlog(`${c.name} abandons you. Hunger consumed it.`,'yel');G.companions=G.companions.filter(x=>x!==c);}else tlog(`${c.name} is at the edge. Feed it.`,'yel');}
+      else if(c.hunger<=15)tlog(`${c.name} is starving.`,'yel');
+      if(c.sleeping&&Math.random()<0.3){c.sleeping=false;c.hp=Math.floor(c.hpMax*0.5);tlog(`${c.name} awakens from hibernation.`,'cyn');}
+    });
+    if(!phT)phT=setTimeout(advPhase,60000);
+    renderStatusBar();autoSave();
+  },30000);
+}
+
+function advPhase(){
+  G.phaseIndex=(G.phaseIndex+1)%PHASES.length;updatePhase();
+  const p=PHASES[G.phaseIndex];
+  tlog(`LUNAR PHASE: ${p.sym} ${p.name} -- ${p.effect}`,'yel');
+  if(p.agg)tlog('Entities will not negotiate until the moon changes.','red');
+  phT=setTimeout(advPhase,60000);autoSave();
+}
+
+function gainExp(a){
+  G.exp+=a;
+  while(G.exp>=G.expNext){G.exp-=G.expNext;G.level++;G.expNext=expForLevel(G.level);G.hpMax=hpForLevel(G.level);G.hp=G.hpMax;tlog(`レベルアップ -- LEVEL ${G.level} reached. HP restored to ${G.hpMax}.`,'wh');G.companions.forEach(c=>{if(Math.random()<0.4){c.level++;c.hpMax=hpForLevel(c.level);c.hp=c.hpMax;}});}
+  renderStatusBar();
+}
+
+function startHeal(){if(healT)clearInterval(healT);healT=setInterval(()=>{if(!gameOn||!G||G.inCombat||G.hp>=G.hpMax)return;const r=Math.max(1,Math.floor(G.hpMax*0.03));G.hp=Math.min(G.hpMax,G.hp+r);renderStatusBar();autoSave();},15000);}
+
+function playerDeath(msg){
+  gameOn=false;clearTimeout(evT);clearInterval(hunT);clearTimeout(bosT);clearInterval(healT);
+  tlog(`消滅 -- ${msg}`,'red');
+  try{localStorage.removeItem('hdr_'+G.username);}catch(e){}
+  setTimeout(()=>showDeadScreen(msg),2000);
+}
+
+function defeatEnemy(e){
+  G.ether+=e.ether;
+  const xp=Math.floor(e.level*15*(e.type==='CORE'?3:e.type==='RESOURCE'?10:e.type==='SATAN'?20:1));
+  gainExp(xp);
+  tlog(`${e.name} defeated. +${e.ether} Ether  +${xp} EXP.`,'wh');
+  if(e.type==='RESOURCE'||e.type==='SATAN'){G.companions.forEach(c=>c.immortalHunger=true);tlog('Your companions will never hunger again.','grn');}
+  clearEvent();G.currentEnemy=null;G.inCombat=false;renderStatusBar();autoSave();scheduleEvent();
+}
+
+// ── COMMANDS ──────────────────────────────────────────────────────────────────
+function handleGameCmd(raw) {
+  if (!G||!gameOn) return;
+  tlog(`>> ${raw}`,'dim',true);
+  if (raw==='ave sathanas'){triggerSatan();return;}
+  switch(raw){
+    case 'help': HELP_L.forEach(l=>tlog(l||' ','dim',true)); break;
+    case 'status':case 'st':
+      tlog(`ENTITY: Lv.${G.level} HP:${G.hp}/${G.hpMax} EXP:${G.exp}/${G.expNext} Ether:${G.ether}`,'gr');
+      tlog(G.inCombat?'[IN COMBAT -- no regen]':`[regen +${Math.max(1,Math.floor(G.hpMax*0.03))}/15s]`,'dim'); break;
+    case 'companions':case 'co':
+      if(!G.companions.length){tlog('No companions.','dim');break;}
+      G.companions.forEach(c=>tlog(`  ${c.name} [${c.type}/${c.subtype}] Lv.${c.level} HP:${c.hp}/${c.hpMax} Hunger:${c.hunger}%${c.sleeping?' [HBN]':''}`,typeColor(c.type))); break;
+    case 'phase':{const p=PHASES[G.phaseIndex];tlog(`${p.sym} ${p.name} -- ${p.effect}`,'gr');break;}
+    case 'save':autoSave();tlog('Game saved. ゲームを保存しました。','grn');break;
+    case 'lore':tlog('Type: lore dato / lore redhex / lore purpose / lore core / lore resource','dim');break;
+    case 'lore dato':showLore('dato');break;
+    case 'lore redhex':showLore('redhex');break;
+    case 'lore purpose':showLore('proposito');break;
+    case 'lore core':showLore('nucleo');break;
+    case 'lore resource':showLore('recurso');break;
+    case 'feed':cmdFeed();break;
+    case 'abandon':cmdAbandon();break;
+    case 'attack':case 'atk':cmdAttack();break;
+    case 'talk':case 'listen':cmdTalk();break;
+    case 'recruit':cmdRecruit();break;
+    case 'offer':cmdOffer();break;
+    case 'flee':case 'run':cmdFlee();break;
+    case 'companion':case 'send':cmdCompanion();break;
+    case 'ignore':cmdIgnore();break;
+    default:tlog(`Unknown command: "${raw}". Type "help".`,'dim');
+  }
+  renderStatusBar();
+}
+
+function cmdAttack(){
+  if(!G.currentEnemy){tlog('No enemy present.','dim');return;}
+  const e=G.currentEnemy;G.inCombat=true;
+  const atk=Math.floor(rand(G.level*8,G.level*15));e.hp=Math.max(0,e.hp-atk);
+  tlog(`You attack ${e.name} -- ${atk} damage.`,'org');
+  if(e.hp<=0){defeatEnemy(e);return;}
+  const dmg=Math.max(1,Math.floor(rand(e.level*5,e.level*10)*(e.type==='RESOURCE'?3:e.type==='SATAN'?5:1)));
+  G.hp=Math.max(0,G.hp-dmg);tlog(`${e.name} counterattacks -- ${dmg} damage.`,'red');tlog(randFrom(TAUNTS[e.type]||TAUNTS["RED HEX"]),'dim');
+  renderStatusBar();if(G.hp<=0){playerDeath(`Consumed by ${e.name}.`);return;}
+  setEvent(`COMBAT :: ${e.name}`,`Enemy HP: ${e.hp}/${e.hpMax}   Your HP: ${G.hp}/${G.hpMax}`,'attack  offer  flee  companion');autoSave();
+}
+
+function cmdTalk(){
+  if(!G.currentEnemy){tlog('No entity present.','dim');return;}
+  const e=G.currentEnemy;if(Math.random()<0.25&&!G.inCombat){triggerAmbush(e);return;}
+  const l=randFrom(DEEP[e.type]||DEEP["RED HEX"]);tlog(`${e.name}: "${l}"`,'dim');
+  setEvent(`DIALOGUE :: ${e.name}`,`"${l.slice(0,60)}"`,'recruit  attack  ignore');
+}
+
+function cmdRecruit(){
+  if(!G.currentEnemy){tlog('No entity present.','dim');return;}
+  const e=G.currentEnemy;
+  if(G.companions.length>=4){tlog('Cannot have more than 4 companions.','dim');return;}
+  if(PHASES[G.phaseIndex].agg){tlog(`${e.name} rejects all alliances. The full moon blinds them.`,'red');return;}
+  if(e.type==='CORE'||e.type==='RESOURCE'){tlog(`${e.name} cannot be recruited.`,'red');return;}
+  if(Math.random()<0.3&&!G.inCombat){triggerAmbush(e);return;}
+  const rec=['COMPANION','ORATOR','DANCER','PARASITE'];
+  const ch=Math.max(0.03,(rec.includes(e.subtype)?0.55:e.subtype==='ACTOR'?0.3:e.type==='SATAN'?0.05:0.15)-Math.max(0,(e.level-G.level)*0.02));
+  if(Math.random()<ch){
+    G.companions.push({name:e.name,type:e.type,subtype:e.subtype,level:e.level,hp:e.hpMax,hpMax:e.hpMax,hunger:70,sleeping:false,immortalHunger:false});
+    tlog(`${e.name} agrees to join you.`,'wh');tlog(randFrom(RECL[e.type]||RECL["RED HEX"]),'dim');
+    G.currentEnemy=null;G.inCombat=false;clearEvent();renderStatusBar();autoSave();scheduleEvent();
+  }else{
+    tlog(`${e.name} rejects your proposal.`,'red');tlog(randFrom(REJL[e.type]||REJL["RED HEX"]),'dim');
+    setEvent(`REJECTED :: ${e.name}`,`${e.name} is not interested.`,'attack  offer  ignore');
+  }
+}
+
+function cmdOffer(){
+  if(!G.currentEnemy){tlog('No entity present.','dim');return;}
+  const e=G.currentEnemy;if(PHASES[G.phaseIndex].agg){tlog(`${e.name} refuses. The full moon makes them insatiable.`,'red');return;}
+  const cost=Math.floor(e.level*2.5);if(G.ether<cost){tlog(`Not enough ether. Need ${cost}, have ${G.ether}.`,'dim');return;}
+  G.ether-=cost;tlog(`You offer ${cost} ether to ${e.name}. It retreats.`,'gr');
+  G.currentEnemy=null;G.inCombat=false;clearEvent();renderStatusBar();autoSave();scheduleEvent();
+}
+
+function cmdFlee(){
+  if(!G.currentEnemy){tlog('Nothing to flee from.','dim');return;}
+  const e=G.currentEnemy;const ch=PHASES[G.phaseIndex].agg?0.3:0.55;
+  if(Math.random()<ch){tlog(`You escape. ${e.name} cannot follow.`,'gr');G.currentEnemy=null;G.inCombat=false;clearEvent();autoSave();scheduleEvent();}
+  else{const dmg=rand(e.level*4,e.level*8);G.hp=Math.max(0,G.hp-dmg);tlog(`${e.name} catches you -- ${dmg} damage.`,'red');renderStatusBar();if(G.hp<=0)playerDeath(`Consumed by ${e.name} while fleeing.`);else setEvent(`COMBAT :: ${e.name}`,`Failed to escape. HP: ${G.hp}/${G.hpMax}`,'attack  offer  flee');}
+}
+
+function cmdCompanion(){
+  if(!G.companions.length||!G.currentEnemy){tlog('No companion or no enemy.','dim');return;}
+  const e=G.currentEnemy;const active=G.companions.filter(c=>!c.sleeping&&c.hp>0);
+  if(!active.length){tlog('No companion can fight right now.','dim');return;}
+  const c=active[0];const bonus=(TSTR[c.type]||[]).includes(e.type)?1.5:(TWKN[c.type]||[]).includes(e.type)?0.6:1;
+  const atk=Math.floor(rand(c.level*6,c.level*12)*bonus);e.hp=Math.max(0,e.hp-atk);
+  tlog(`${c.name} attacks ${e.name} -- ${atk} damage${bonus>1?' (EFFECTIVE!)':''}.`,'cyn');
+  if(e.hp<=0){defeatEnemy(e);return;}
+  const dmg=rand(e.level*4,e.level*8);c.hp=Math.max(0,c.hp-dmg);tlog(`${e.name} strikes ${c.name} -- ${dmg} damage.`,'red');
+  if(c.hp<=0){if(c.subtype==='ACTOR'){c.sleeping=true;c.hp=1;tlog(`${c.name} falls into hibernation.`,'yel');}else{G.companions=G.companions.filter(x=>x!==c);tlog(`${c.name} was consumed. Gone.`,'red');}}
+  setEvent(`COMBAT :: ${e.name}`,`Enemy HP: ${e.hp}/${e.hpMax}   ${c.name} HP: ${c.hp||0}/${c.hpMax}`,'attack  companion  offer  flee');renderStatusBar();autoSave();
+}
+
+function cmdIgnore(){tlog('You move away. The presence dissolves.','gr');G.currentEnemy=null;G.inCombat=false;clearEvent();autoSave();scheduleEvent();}
+
+function cmdFeed(){
+  if(!G.companions.length){tlog('No companions to feed.','dim');return;}
+  if(G.ether<10){tlog(`Not enough ether. Need 10, have ${G.ether}.`,'dim');return;}
+  G.ether-=10;G.companions.forEach(c=>{if(!c.immortalHunger)c.hunger=Math.min(100,c.hunger+30);});
+  tlog('You channel ether to your companions. Hunger recedes.','cyn');renderStatusBar();autoSave();
+}
+
+function cmdAbandon(){
+  if(!G.companions.length){tlog('No companions.','dim');return;}
+  showConfirmBox('ABANDON ALL COMPANIONS?',`${G.companions.map(c=>c.name).join(', ')}  -- Type "yes" to confirm.`,ans=>{
+    if(ans==='yes'||ans==='y'){G.companions.forEach(c=>tlog(`You abandon ${c.name}.`,'yel'));G.companions=[];renderStatusBar();autoSave();}
+    else tlog('Abandoned.','dim');
+    showGameScreen();renderLogArea();renderAll();
+  });
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+inp.focus();
+showBoot();
+</script>
+</body>
+</html>
