@@ -6,7 +6,7 @@
 <style>
 @font-face {
   font-family: 'PC9800';
-  src: url('https://raw.githubusercontent.com/arsradiophonik/ArsRadiophonikGameRoom/main/pc-9800.ttf') format('truetype'), url('pc-9800.ttf') format('truetype'), url('PC-9800.ttf') format('truetype');
+  src: url('https://raw.githubusercontent.com/arsradiophonik/ArsRadiophonikGameRoom/main/pc-9800.ttf') format('truetype');
   font-display: block;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -28,7 +28,7 @@ html, body {
 }
 #terminal {
   position: absolute; inset: 0;
-  font-family: 'PC9800', 'Courier New', 'Lucida Console', monospace;
+  font-family: 'PC9800', monospace;
   font-size: 15.36px;
   line-height: 19.2px;
   letter-spacing: 0px;
@@ -232,7 +232,6 @@ const HELP_L = [
   "  abandon       release all companions",
   "  save          save locally",
   "  export        download save file as JSON",
-  "  oracle        consult an ORATOR entity for a prophecy reading",
   "IN ENCOUNTER ────────────────────────────────────────────────────────────",
   "  attack        strike the entity",
   "  talk / listen approach and speak (may trigger ambush)",
@@ -398,7 +397,6 @@ function submitInput() {
   else if (inputMode==='game') handleGameCmd(val);
   else if (inputMode==='dead') handleDead(val);
   else if (inputMode==='confirm') handleConfirm(val);
-  else if (inputMode==='oracle'||inputMode==='prophecy') handleOracleInput(val);
 }
 
 // ── BOOT ──────────────────────────────────────────────────────────────────────
@@ -502,7 +500,7 @@ function startGame() {
   tlog('The demons here were conjured by black magic in every cable.','dim');
   tlog('Your only law: consume or be consumed.','yel');
   tlog('HP regenerates slowly when not in combat. Type "help".','dim');
-  if(G.profile){G.profile.sessionsPlayed=(G.profile.sessionsPlayed||0)+1;if(!G.profile.mostFeared)G.profile.mostFeared=null;}gameOn=true; updatePhase(); scheduleEvent(); startHunger(); scheduleBoss(); startHeal(); scheduleResource(); autoSave();
+  gameOn=true; updatePhase(); scheduleEvent(); startHunger(); scheduleBoss(); startHeal(); scheduleResource(); autoSave();
   inp.focus();
 }
 
@@ -572,10 +570,8 @@ function hpForLevel(l){return 80+l*20;}
 function rand(a,b){return Math.floor(Math.random()*(b-a+1))+a;}
 function randFrom(a){return a[Math.floor(Math.random()*a.length)];}
 
-function defState(u){return{username:u,level:1,exp:0,expNext:expForLevel(1),hp:hpForLevel(1),hpMax:hpForLevel(1),ether:0,companions:[],phaseIndex:0,inCombat:false,currentEnemy:null,dead:false,_ev:null,created:Date.now(),lastSave:Date.now(),
-  profile:{zodiac:null,attacks:0,flees:0,talks:0,recruits:0,abandoned:[],etherSpent:0,saveCount:0,ignores:0,companionLost:[],oracleVisits:0,oraclePaid:0,lastProphecy:null,memoryLog:[],firstContact:null,mostFeared:null,fleeFrom:{},sessionsPlayed:0}
-};}
-function autoSave(){if(!G)return;G.lastSave=Date.now();if(G.profile)G.profile.saveCount=(G.profile.saveCount||0)+1;try{localStorage.setItem('hdr_'+G.username,JSON.stringify(G));}catch(e){}}
+function defState(u){return{username:u,level:1,exp:0,expNext:expForLevel(1),hp:hpForLevel(1),hpMax:hpForLevel(1),ether:0,companions:[],phaseIndex:0,inCombat:false,currentEnemy:null,dead:false,_ev:null,created:Date.now(),lastSave:Date.now()};}
+function autoSave(){if(!G)return;G.lastSave=Date.now();try{localStorage.setItem('hdr_'+G.username,JSON.stringify(G));}catch(e){}}
 function loadSave(n){try{const d=localStorage.getItem('hdr_'+n);return d?JSON.parse(d):null;}catch(e){return null;}}
 function updatePhase(){renderStatusBar();renderAll();}
 
@@ -597,7 +593,6 @@ function makeCreature(boss,res,satan){
 function triggerEncounter(){
   const e=makeCreature();G.currentEnemy=e;G.inCombat=false;
   const agg=PHASES[G.phaseIndex].agg;
-  maybeSpontaneousProphecy(e);
   tlog(`ENCOUNTER -- ${e.name} [${e.type}/${e.subtype}] Lv.${e.level}`,'red');
   tlog(randFrom(TAUNTS[e.type]||TAUNTS["RED HEX"]),'dim');
   setEvent(`ENCOUNTER :: ${e.name}`,`[${e.type}][${e.subtype}] Lv.${e.level} HP:${e.hp} ETH:${e.ether}${agg?' [!]FULL MOON':''}`,agg?'attack  companion':'attack  talk  recruit  offer  flee  companion');
@@ -605,13 +600,9 @@ function triggerEncounter(){
 
 function triggerNeg(){
   const e=makeCreature();G.currentEnemy=e;G.inCombat=false;
-  maybeSpontaneousProphecy(e);
-  const rem=entityRemembrance();
-  if(rem)tlog(e.name+': "'+rem+'"','pur');
   tlog(`CONTACT -- ${e.name} [${e.type}] approaches without hostility.`,'cyn');
   tlog(randFrom(TALK[e.type]||TALK["RED HEX"]),'dim');
-  const oraHint=e.subtype==='ORATOR'?' oracle':'';
-  setEvent(`CONTACT :: ${e.name}`,`[${e.type}][${e.subtype}] Lv.${e.level} -- wants to communicate.`,`listen  recruit  attack  ignore${oraHint}`);
+  setEvent(`CONTACT :: ${e.name}`,`[${e.type}][${e.subtype}] Lv.${e.level} -- wants to communicate.`,'listen  recruit  attack  ignore');
 }
 
 function triggerAmbush(e){
@@ -747,10 +738,6 @@ function handleGameCmd(raw) {
     case 'flee':case 'run':cmdFlee();break;
     case 'companion':case 'send':cmdCompanion();break;
     case 'ignore':cmdIgnore();break;
-    case 'oracle':case 'read':case 'prophecy':
-      if(G.currentEnemy&&G.currentEnemy.subtype==='ORATOR'){cmdOracle(G.currentEnemy);}
-      else{tlog('No oracle present. Approach an ORATOR subtype entity first.','dim');}
-      break;
     default:tlog(`Unknown command: "${raw}". Type "help".`,'dim');
   }
   renderStatusBar();
@@ -759,7 +746,6 @@ function handleGameCmd(raw) {
 function cmdAttack(){
   if(!G.currentEnemy){tlog('No enemy present.','dim');return;}
   const e=G.currentEnemy;G.inCombat=true;
-  if(G.profile)G.profile.attacks=(G.profile.attacks||0)+1;
   const atk=Math.floor(rand(G.level*8,G.level*15));e.hp=Math.max(0,e.hp-atk);
   tlog(`You attack ${e.name} -- ${atk} damage.`,'org');
   if(e.hp<=0){defeatEnemy(e);return;}
@@ -772,18 +758,8 @@ function cmdAttack(){
 function cmdTalk(){
   if(!G.currentEnemy){tlog('No entity present.','dim');return;}
   const e=G.currentEnemy;if(Math.random()<0.25&&!G.inCombat){triggerAmbush(e);return;}
-  if(G.profile){
-    G.profile.talks=(G.profile.talks||0)+1;
-    if(!G.profile.firstContact)G.profile.firstContact=e.name;
-  }
-  // ORATOR subtype triggers oracle system
-  if(e.subtype==='ORATOR'&&!G.inCombat){
-    cmdOracle(e); return;
-  }
-  const l=randFrom(DEEP[e.type]||DEEP["RED HEX"]);
-  if(G.profile&&G.profile.memoryLog){G.profile.memoryLog.push(l);if(G.profile.memoryLog.length>6)G.profile.memoryLog.shift();}
-  tlog(e.name+': "'+l+'"','dim');
-  setEvent(`DIALOGUE :: ${e.name}`,`"${l.slice(0,60)}",'recruit  attack  ignore  oracle');
+  const l=randFrom(DEEP[e.type]||DEEP["RED HEX"]);tlog(`${e.name}: "${l}"`,'dim');
+  setEvent(`DIALOGUE :: ${e.name}`,`"${l.slice(0,60)}"`,'recruit  attack  ignore');
 }
 
 function cmdRecruit(){
@@ -797,7 +773,7 @@ function cmdRecruit(){
   const ch=Math.max(0.03,(rec.includes(e.subtype)?0.55:e.subtype==='ACTOR'?0.3:e.type==='SATAN'?0.05:0.15)-Math.max(0,(e.level-G.level)*0.02));
   if(Math.random()<ch){
     G.companions.push({name:e.name,type:e.type,subtype:e.subtype,level:e.level,hp:e.hpMax,hpMax:e.hpMax,hunger:70,sleeping:false,immortalHunger:false});
-    if(G.profile)G.profile.recruits=(G.profile.recruits||0)+1;tlog(`${e.name} agrees to join you.`,'wh');tlog(randFrom(RECL[e.type]||RECL["RED HEX"]),'dim');
+    tlog(`${e.name} agrees to join you.`,'wh');tlog(randFrom(RECL[e.type]||RECL["RED HEX"]),'dim');
     G.currentEnemy=null;G.inCombat=false;clearEvent();renderStatusBar();autoSave();scheduleEvent();
   }else{
     tlog(`${e.name} rejects your proposal.`,'red');tlog(randFrom(REJL[e.type]||REJL["RED HEX"]),'dim');
@@ -809,14 +785,13 @@ function cmdOffer(){
   if(!G.currentEnemy){tlog('No entity present.','dim');return;}
   const e=G.currentEnemy;if(PHASES[G.phaseIndex].agg){tlog(`${e.name} refuses. The full moon makes them insatiable.`,'red');return;}
   const cost=Math.floor(e.level*2.5);if(G.ether<cost){tlog(`Not enough ether. Need ${cost}, have ${G.ether}.`,'dim');return;}
-  G.ether-=cost;if(G.profile)G.profile.etherSpent=(G.profile.etherSpent||0)+cost;tlog(`You offer ${cost} ether to ${e.name}. It retreats.`,'gr');
+  G.ether-=cost;tlog(`You offer ${cost} ether to ${e.name}. It retreats.`,'gr');
   G.currentEnemy=null;G.inCombat=false;clearEvent();renderStatusBar();autoSave();scheduleEvent();
 }
 
 function cmdFlee(){
   if(!G.currentEnemy){tlog('Nothing to flee from.','dim');return;}
   const e=G.currentEnemy;const ch=PHASES[G.phaseIndex].agg?0.3:0.55;
-  if(G.profile){G.profile.flees=(G.profile.flees||0)+1;if(e){const t=e.type;G.profile.fleeFrom[t]=(G.profile.fleeFrom[t]||0)+1;const mf=Object.entries(G.profile.fleeFrom).sort((a,b)=>b[1]-a[1]);G.profile.mostFeared=mf.length?mf[0][0]:null;}}
   if(Math.random()<ch){tlog(`You escape. ${e.name} cannot follow.`,'gr');G.currentEnemy=null;G.inCombat=false;clearEvent();autoSave();scheduleEvent();}
   else{const dmg=rand(e.level*4,e.level*8);G.hp=Math.max(0,G.hp-dmg);tlog(`${e.name} catches you -- ${dmg} damage.`,'red');renderStatusBar();if(G.hp<=0)playerDeath(`Consumed by ${e.name} while fleeing.`);else setEvent(`COMBAT :: ${e.name}`,`Failed to escape. HP: ${G.hp}/${G.hpMax}`,'attack  offer  flee');}
 }
@@ -830,7 +805,7 @@ function cmdCompanion(){
   tlog(`${c.name} attacks ${e.name} -- ${atk} damage${bonus>1?' (EFFECTIVE!)':''}.`,'cyn');
   if(e.hp<=0){defeatEnemy(e);return;}
   const dmg=rand(e.level*4,e.level*8);c.hp=Math.max(0,c.hp-dmg);tlog(`${e.name} strikes ${c.name} -- ${dmg} damage.`,'red');
-  if(c.hp<=0){if(c.subtype==='ACTOR'){c.sleeping=true;c.hp=1;tlog(`${c.name} falls into hibernation.`,'yel');}else{if(G.profile&&G.profile.companionLost)G.profile.companionLost.push(c.name);G.companions=G.companions.filter(x=>x!==c);tlog(`${c.name} was consumed. Gone.`,'red');}}
+  if(c.hp<=0){if(c.subtype==='ACTOR'){c.sleeping=true;c.hp=1;tlog(`${c.name} falls into hibernation.`,'yel');}else{G.companions=G.companions.filter(x=>x!==c);tlog(`${c.name} was consumed. Gone.`,'red');}}
   setEvent(`COMBAT :: ${e.name}`,`Enemy HP: ${e.hp}/${e.hpMax}   ${c.name} HP: ${c.hp||0}/${c.hpMax}`,'attack  companion  offer  flee');renderStatusBar();autoSave();
 }
 
@@ -846,517 +821,41 @@ function cmdFeed(){
 function cmdAbandon(){
   if(!G.companions.length){tlog('No companions.','dim');return;}
   showConfirmBox('ABANDON ALL COMPANIONS?',`${G.companions.map(c=>c.name).join(', ')}  -- Type "yes" to confirm.`,ans=>{
-    if(ans==='yes'||ans==='y'){G.companions.forEach(c=>{if(G.profile&&G.profile.abandoned)G.profile.abandoned.push(c.name);tlog(`You abandon ${c.name}.`,'yel')});G.companions=[];renderStatusBar();autoSave();}
+    if(ans==='yes'||ans==='y'){G.companions.forEach(c=>tlog(`You abandon ${c.name}.`,'yel'));G.companions=[];renderStatusBar();autoSave();}
     else tlog('Abandoned.','dim');
     showGameScreen();renderLogArea();renderAll();
   });
 }
 
-
-// ══════════════════════════════════════════════════════════════════════════════
-// ── PROPHECY ENGINE v1.0 ── COLD READING / ORACLE SYSTEM ─────────────────────
-// ══════════════════════════════════════════════════════════════════════════════
-
-const ZODIAC_DATA = {
-  aries:     {sym:'♈',el:'FIRE',   kw:['pride','impulse','confrontation','flame'],
-              barnum:["Your anger arrives before your words do.","You make decisions before the consequences reveal themselves.","Surrender is not in your code. But exhaustion is."]},
-  taurus:    {sym:'♉',el:'EARTH',  kw:['possession','patience','weight','debt'],
-              barnum:["Something you own has begun to own you.","You hold on long past the point of wisdom.","Others call it stubbornness. You call it loyalty."]},
-  gemini:    {sym:'♊',el:'AIR',    kw:['duality','masks','communication','mirror'],
-              barnum:["You contain two voices that rarely agree.","You have said things you did not mean. And meant things you never said.","Others see your surface. Very few have seen beneath it."]},
-  cancer:    {sym:'♋',el:'WATER',  kw:['memory','shell','family','tides'],
-              barnum:["Something from long ago still controls a decision you made recently.","You protect others more easily than you protect yourself.","The wound is older than you remember."]},
-  leo:       {sym:'♌',el:'FIRE',   kw:['recognition','ego','performance','crown'],
-              barnum:["You need to be seen. You would deny this if asked.","Your generosity and your pride share the same origin.","The moment no one watches, you are not sure who you are."]},
-  virgo:     {sym:'♍',el:'EARTH',  kw:['control','analysis','criticism','order'],
-              barnum:["You find errors others cannot see. Including in yourself.","Your standards are a gift you give to no one.","The chaos you fear most is the one already inside the system."]},
-  libra:     {sym:'♎',el:'AIR',    kw:['balance','indecision','beauty','contract'],
-              barnum:["The choice you keep postponing is already made.","You are more certain than you allow yourself to appear.","Something you agreed to no longer fits who you are."]},
-  scorpio:   {sym:'♏',el:'WATER',  kw:['obsession','depth','betrayal','transformation'],
-              barnum:["You remember everything. You forgive selectively.","There is something you are investigating that others believe closed.","The intensity that draws people in is the same one that drives them away."]},
-  sagittarius:{sym:'♐',el:'FIRE',  kw:['escape','philosophy','distance','horizon'],
-              barnum:["You are already planning the exit from what has not yet finished.","Your optimism is real. And so is the restlessness beneath it.","The question you keep asking does not have a destination."]},
-  capricorn: {sym:'♑',el:'EARTH',  kw:['burden','climb','inevitable','responsibility'],
-              barnum:["You carry something that was placed on you without your consent.","Success feels like debt. You are unsure to whom.","The weight is familiar. That does not mean it belongs to you."]},
-  aquarius:  {sym:'♒',el:'AIR',    kw:['detachment','future','system','outsider'],
-              barnum:["You observe more than you participate.","You have felt out of place in most rooms you have entered.","Your ideas arrive before the world is ready for them."]},
-  pisces:    {sym:'♓',el:'WATER',  kw:['dream','loss','memory','dissolution'],
-              barnum:["Something you lost still shapes your choices.","The boundary between what happened and what you remember happening has blurred.","You carry grief you have not named."]}
-};
-
-const ZODIAC_MONTHS = [
-  [1,20,'aquarius'],[2,19,'pisces'],[3,21,'aries'],[4,20,'taurus'],
-  [5,21,'gemini'],[6,21,'cancer'],[7,23,'leo'],[8,23,'virgo'],
-  [9,23,'libra'],[10,23,'scorpio'],[11,22,'sagittarius'],[12,22,'capricorn'],[12,31,'capricorn']
-];
-
-function getZodiacFromDate(month, day) {
-  for (const [m,d,sign] of ZODIAC_MONTHS) {
-    if (month < m || (month === m && day <= d)) return sign;
-  }
-  return 'capricorn';
-}
-
-// ── BEHAVIORAL PROFILING ──────────────────────────────────────────────────────
-
-function buildProfile() {
-  const p = G.profile || {};
-  const timePlayed = Math.floor((Date.now() - (G.created || Date.now())) / 60000);
-  const attackRatio = (p.attacks||0) / Math.max(1,(p.attacks||0)+(p.flees||0)+(p.ignores||0));
-  const fleeRatio   = (p.flees||0)  / Math.max(1,(p.attacks||0)+(p.flees||0)+(p.ignores||0));
-
-  return {
-    p,
-    level: G.level,
-    ether: G.ether,
-    companions: G.companions,
-    timePlayed,
-    attackRatio,
-    fleeRatio,
-    isAggressive:   attackRatio > 0.6,
-    isFleeing:      fleeRatio > 0.4,
-    isNegotiator:   (p.etherSpent||0) > 50,
-    isLoner:        (p.recruits||0) === 0,
-    hasAbandoned:   (p.abandoned||[]).length > 0,
-    hasLostComp:    (p.companionLost||[]).length > 0,
-    savesOften:     (p.saveCount||0) > 10,
-    talksAlot:      (p.talks||0) > 5,
-    zodiac:         p.zodiac ? ZODIAC_DATA[p.zodiac] : null,
-    zodiacKey:      p.zodiac || null,
-    mostFeared:     p.mostFeared,
-    firstContact:   p.firstContact,
-    abandoned:      p.abandoned || [],
-    companionLost:  p.companionLost || [],
-    memoryLog:      p.memoryLog || [],
-    oracleCount:    p.oracleVisits || 0,
-    sessions:       p.sessionsPlayed || 1,
-  };
-}
-
-// ── BARNUM PHRASES ────────────────────────────────────────────────────────────
-
-const BARNUM_UNIVERSAL = [
-  "There is something you have not finished that keeps calling you back.",
-  "You have been both the wound and the one who inflicted it.",
-  "You present confidence to most. A smaller self remains hidden.",
-  "The thing you avoid most is often the most important.",
-  "You have compromised in ways that still bother you.",
-  "Something important was left unsaid. It may still be.",
-  "You have protected someone at cost to yourself.",
-  "Your greatest strength and your greatest weakness share an origin.",
-  "There is a version of you that did not make it here.",
-  "The door that closed was not entirely an accident.",
-];
-
-const BARNUM_RAINBOW = [
-  "You can be cold. But certain wounds still govern your choices.",
-  "You give much to others. And rarely ask for what you need.",
-  "You appear patient. But something is accumulating beneath the surface.",
-  "You have clear convictions. And a private doubt about each one.",
-  "You are careful with trust. And reckless in other ways.",
-];
-
-const SHOTGUN_SETS = [
-  ["A break...", "...a debt...", "...or something that was never returned."],
-  ["Displacement...", "...a name you stopped saying...", "...or a door you no longer enter."],
-  ["A number that repeats...", "...a date...", "...or a pattern you have not named yet."],
-  ["Someone who left...", "...or someone who stayed too long...", "...the effect was similar."],
-  ["Loss...", "...or the anticipation of loss...", "...the body does not distinguish between them."],
-];
-
-// ── PROPHECY LINE GENERATORS ──────────────────────────────────────────────────
-
-function prophecyLow(pr) {
-  // Low cost: pure Barnum, universal
-  const pool = [...BARNUM_UNIVERSAL, ...BARNUM_RAINBOW];
-  const chosen = [];
-  const shuffled = pool.sort(()=>Math.random()-0.5);
-  chosen.push(shuffled[0]);
-  chosen.push(shuffled[1]);
-  return chosen;
-}
-
-function prophecyMid(pr) {
-  // Mid cost: behavioral data, rainbow ruse, shotgunning
-  const lines = [];
-
-  if (pr.isAggressive)
-    lines.push("Those who strike first are rarely looking for an answer.");
-  else if (pr.isFleeing)
-    lines.push("The ones who run most often are not afraid of what pursues them. They are afraid of what they carry.");
-  else if (pr.isNegotiator)
-    lines.push("You believe you can buy your way past the things that matter most.");
-
-  if (pr.isLoner)
-    lines.push("You have kept yourself alone in this. Whether by choice or by habit no longer matters.");
-  else if (pr.companions.length > 2)
-    lines.push("You surround yourself. But the number does not fill the distance.");
-
-  if (pr.hasAbandoned)
-    lines.push("Something was left behind that remembers being left.");
-
-  if (pr.level > 10)
-    lines.push("You have come far. And still the unease persists. That is not a coincidence.");
-
-  if (pr.ether > 100)
-    lines.push("You have accumulated much. There is still something you feel you lack.");
-
-  // Always add one rainbow ruse
-  lines.push(randFrom(BARNUM_RAINBOW));
-
-  // Always add shotgun
-  const shot = randFrom(SHOTGUN_SETS);
-  lines.push(...shot);
-
-  return lines.slice(0, 6);
-}
-
-function prophecyHigh(pr) {
-  // High cost: specific, uses names, memory, impossible knowledge
-  const lines = [];
-
-  // Use zodiac
-  if (pr.zodiac) {
-    const z = pr.zodiac;
-    lines.push(`${z.sym} ${z.el}. ${randFrom(z.barnum)}`);
-    lines.push(`The ${z.kw[0]} and the ${z.kw[1]} have always competed in you.`);
-  }
-
-  // Use specific names
-  if (pr.abandoned.length > 0) {
-    const name = pr.abandoned[pr.abandoned.length-1];
-    lines.push(`${name} still registers in the net. Abandoned things do not disappear.`);
-  }
-
-  if (pr.companionLost.length > 0) {
-    const name = pr.companionLost[0];
-    lines.push(`The one called ${name} was consumed. Did you believe that would not leave a trace?`);
-  }
-
-  if (pr.firstContact && pr.oracleCount === 0) {
-    lines.push(`The first one you spoke to was ${pr.firstContact}. You remember what it said.`);
-  }
-
-  if (pr.mostFeared) {
-    lines.push(`You have fled from ${pr.mostFeared} more than anything else. They know this.`);
-  }
-
-  if (pr.sessions > 2) {
-    lines.push(`You have returned to this place ${pr.sessions} times. The void counts your arrivals.`);
-  }
-
-  if (pr.timePlayed > 60) {
-    lines.push(`You have been here long enough. The question is why you are still here.`);
-  }
-
-  if (pr.savesOften) {
-    lines.push(`You save your state as if that could protect you. Some losses cannot be rolled back.`);
-  }
-
-  if (pr.memoryLog.length > 0) {
-    const mem = pr.memoryLog[0];
-    lines.push(`You were once told: "${mem.slice(0,50)}". You have not answered it.`);
-  }
-
-  // Impossible knowledge
-  lines.push(randFrom([
-    "The node you have not yet reached is already waiting for you.",
-    "There is a moment ahead. You will recognize it when it arrives.",
-    "Something will be offered to you that you will refuse. It will not be offered again.",
-    "I thought you had already died there. Perhaps you have. Perhaps this is what comes after.",
-    "The pattern you keep repeating has a name. You do not know it yet.",
-  ]));
-
-  return lines.slice(0, 7);
-}
-
-// ── ZODIAC INTAKE SCREEN ─────────────────────────────────────────────────────
-
-let _zodiacCB = null;
-let zodiacInputMode = false;
-let zodiacStep = 0;
-let zodiacMonth = 0;
-
-function beginZodiacIntake(onDone) {
-  _zodiacCB = onDone;
-  zodiacStep = 1;
-  zodiacInputMode = true;
-  inputMode = 'oracle';
-  clearRows(6,18);
-  drawBox(6,18,2,COLS-3);
-  writeStr(7,4,'ENTITY ASSESSMENT PROTOCOL','pur');
-  writeStr(8,4,'─'.repeat(60),'dim');
-  writeStr(9,4,'To read you properly I require one datum.','gr');
-  writeStr(11,4,'In what month were you born?','gr');
-  writeStr(12,4,'(enter a number: 1-12)','dim');
-  renderAll(); renderInputRow();
-}
-
-function handleZodiacInput(val) {
-  if (zodiacStep === 1) {
-    const m = parseInt(val);
-    if (isNaN(m)||m<1||m>12) {
-      writeStr(15,4,'ERROR: Enter a number between 1 and 12.','red'); renderRow(15); return;
-    }
-    zodiacMonth = m;
-    zodiacStep = 2;
-    clearRows(11,15);
-    writeStr(11,4,'And the day?','gr');
-    writeStr(12,4,'(enter a number: 1-31)','dim');
-    renderAll();
-  } else if (zodiacStep === 2) {
-    const d = parseInt(val);
-    if (isNaN(d)||d<1||d>31) {
-      writeStr(15,4,'ERROR: Enter a number between 1 and 31.','red'); renderRow(15); return;
-    }
-    const sign = getZodiacFromDate(zodiacMonth, d);
-    G.profile.zodiac = sign;
-    const zd = ZODIAC_DATA[sign];
-    zodiacInputMode = false;
-    zodiacStep = 0;
-    autoSave();
-    clearRows(6,18);
-    drawBox(6,18,2,COLS-3);
-    writeStr(7,4,`${zd.sym}  ${sign.toUpperCase()}  ──  ${zd.el}`,'pur');
-    writeStr(8,4,'─'.repeat(60),'dim');
-    writeStr(9,4,'...','dim');
-    writeStr(10,4,'yes.','gr');
-    writeStr(11,4,'that explains several things.','dim');
-    renderAll();
-    inputMode='confirm';
-    _confirmCB=()=>{
-      inputMode='oracle';
-      if(_zodiacCB){const cb=_zodiacCB;_zodiacCB=null;cb();}
-      else{inputMode='game';showGameScreen();renderLogArea();renderAll();}
-    };
-  }
-}
-
-// ── ORACLE SESSION ────────────────────────────────────────────────────────────
-
-let oracleEntity = null;
-let oracleStage = 0; // 0=offer, 1=low reading, 2=mid reading, 3=high reading
-
-const ORACLE_COSTS = {low:0, mid:15, high:40};
-const ORACLE_INTROS = [
-  "...you want to know something.",
-  "I have been watching you for some time.",
-  "There are patterns in the way you move through this net.",
-  "Sit. If entities such as yourself can sit.",
-  "I will not tell you what you want to hear. I will tell you what I observe.",
-];
-const ORACLE_TRANSITIONS = [
-  "...wait.",
-  "...there is more.",
-  "the signal is becoming clearer.",
-  "I am reading several layers simultaneously.",
-  "...do not move.",
-];
-
-function cmdOracle(entity) {
-  if (!G.profile) return;
-  oracleEntity = entity || G.currentEnemy;
-  oracleStage = 0;
-  G.profile.oracleVisits = (G.profile.oracleVisits||0)+1;
-
-  // If no zodiac yet, collect it first
-  if (!G.profile.zodiac) {
-    beginZodiacIntake(()=>presentOracleOffer());
-    return;
-  }
-  presentOracleOffer();
-}
-
-function presentOracleOffer() {
-  inputMode = 'oracle';
-  const name = oracleEntity ? oracleEntity.name : '???';
-  clearRows(6,18);
-  drawBox(6,18,2,COLS-3);
-  writeStr(7,4,`ORACLE :: ${name}`,'pur');
-  writeStr(8,4,'─'.repeat(60),'dim');
-  writeStr(9,4,randFrom(ORACLE_INTROS),'gr');
-  writeStr(11,4,'Choose a depth of reading:','dim');
-  writeStr(13,4,'  surface    --  free  --  an impression','gr');
-  writeStr(14,4,'  channel    --  15 ether  --  a deeper layer','gr');
-  writeStr(15,4,'  abyss      --  40 ether  --  the full reading','gr');
-  writeStr(17,4,'(type: surface / channel / abyss / leave)','dim');
-  renderAll(); renderInputRow();
-}
-
-function handleOracleInput(val) {
-  if (zodiacInputMode) { handleZodiacInput(val); return; }
-
-  if (val === 'leave' || val === 'exit' || val === 'back') {
-    inputMode='game'; showGameScreen(); renderLogArea(); renderAll();
-    return;
-  }
-
-  const pr = buildProfile();
-  let lines = [];
-  let cost = 0;
-  let depth = '';
-
-  if (val === 'surface') {
-    lines = prophecyLow(pr); cost = 0; depth = 'SURFACE';
-  } else if (val === 'channel') {
-    if (G.ether < ORACLE_COSTS.mid) {
-      clearRows(16,17);
-      writeStr(16,4,`Not enough ether. Need ${ORACLE_COSTS.mid}, have ${G.ether}.`,'red');
-      renderRow(16); return;
-    }
-    G.ether -= ORACLE_COSTS.mid;
-    G.profile.oraclePaid=(G.profile.oraclePaid||0)+ORACLE_COSTS.mid;
-    lines = prophecyMid(pr); cost = ORACLE_COSTS.mid; depth = 'CHANNEL';
-  } else if (val === 'abyss') {
-    if (G.ether < ORACLE_COSTS.high) {
-      clearRows(16,17);
-      writeStr(16,4,`Not enough ether. Need ${ORACLE_COSTS.high}, have ${G.ether}.`,'red');
-      renderRow(16); return;
-    }
-    G.ether -= ORACLE_COSTS.high;
-    G.profile.oraclePaid=(G.profile.oraclePaid||0)+ORACLE_COSTS.high;
-    lines = prophecyHigh(pr); cost = ORACLE_COSTS.high; depth = 'ABYSS';
-  } else {
-    writeStr(17,4,'Type: surface / channel / abyss / leave','dim'); renderRow(17); return;
-  }
-
-  G.profile.lastProphecy = lines[0] || '';
-  autoSave();
-  deliverProphecy(lines, depth, cost);
-}
-
-// ── PROPHECY DELIVERY (typewriter, multi-page) ────────────────────────────────
-
-function deliverProphecy(lines, depth, cost) {
-  inputMode = 'prophecy';
-  const name = oracleEntity ? oracleEntity.name : '???';
-  clearScreen();
-  for (let c=0;c<COLS;c++){setCell(0,c,'─','dim');setCell(ROWS-1,c,'─','dim');}
-  for (let r=1;r<ROWS-1;r++){setCell(r,0,'│','dim');setCell(r,COLS-1,'│','dim');}
-  writeStr(0,2,` PROPHECY :: ${name} ─── ${depth} `,'pur');
-  if(cost>0) writeStr(0,COLS-12,`-${cost} ETHER`,'dim');
-
-  let row = 3;
-  let qi = 0;
-
-  function nextLine() {
-    if (qi >= lines.length) {
-      writeStr(ROWS-2,2,'press ENTER to close','dim');
-      inputMode='confirm';
-      _confirmCB=()=>{
-        inputMode='game';
-        // If entity still present, show dialogue options
-        if(oracleEntity&&G.currentEnemy===oracleEntity){
-          setEvent(`DIALOGUE :: ${oracleEntity.name}`,
-            `"${(lines[0]||'').slice(0,58)}"`,
-            'recruit  attack  ignore');
-        }
-        showGameScreen(); renderLogArea(); renderAll();
-      };
-      renderAll();
-      return;
-    }
-    const line = lines[qi]; qi++;
-    if (!line) { row++; setTimeout(nextLine,200); return; }
-    if (row >= ROWS-3) { // page break
-      writeStr(ROWS-2,2,'... press ENTER ...','dim');
-      renderAll();
-      inputMode='confirm';
-      _confirmCB=()=>{
-        inputMode='prophecy';
-        for(let r=3;r<ROWS-2;r++) clearRow(r);
-        row=3;
-        writeStr(0,2,` PROPHECY :: ${name} ─── ${depth} `,'pur');
-        renderAll();
-        nextLine();
-      };
-      return;
-    }
-    // Typewrite the prophecy line
-    twQ.push({text: line, cls:'pur', instant:false});
-    if (!twRun) {
-      // Override: write directly to screen row instead of log
-      writeProphecyLine(line, row, ()=>{
-        row++; setTimeout(nextLine,600);
-      });
-    } else {
-      writeProphecyLine(line, row, ()=>{
-        row++; setTimeout(nextLine,600);
-      });
-    }
-  }
-
-  nextLine();
-}
-
-function writeProphecyLine(text, row, cb) {
-  if(row>=ROWS-2){if(cb)cb();return;}
-  let i=0;
-  const spd=text.length>50?8:12;
-  clearRow(row);
-  function tick(){
-    writeStr(row,2,text.slice(0,i+1),'pur');
-    renderRow(row);
-    i++;
-    if(i<text.length) setTimeout(tick,spd);
-    else if(cb) setTimeout(cb,300);
-  }
-  tick();
-}
-
-// ── SPONTANEOUS PROPHECY (from ORATOR entities during encounters) ─────────────
-
-function maybeSpontaneousProphecy(entity) {
-  // 20% chance when an ORATOR entity appears naturally
-  if(!G||!G.profile) return;
-  if(entity.subtype!=='ORATOR') return;
-  if(Math.random()>0.20) return;
-
-  const pr = buildProfile();
-  // Pick one Barnum line and deliver it as a taunt
-  let line;
-  if(pr.abandoned.length>0)
-    line=`${entity.name} whispers: "${pr.abandoned[pr.abandoned.length-1]} still echoes in the net."`;
-  else if(pr.zodiac)
-    line=`${entity.name}: "${randFrom(pr.zodiac.barnum)}"`;
-  else
-    line=`${entity.name}: "${randFrom(BARNUM_UNIVERSAL)}"`;
-  tlog(line,'pur');
-  if(G.profile.memoryLog){G.profile.memoryLog.push(line);if(G.profile.memoryLog.length>6)G.profile.memoryLog.shift();}
-}
-
-// ── MEMORY CALLBACKS (entities remembering) ──────────────────────────────────
-
-function entityRemembrance() {
-  if(!G||!G.profile) return null;
-  const p = G.profile;
-  const lines = [];
-  if(p.memoryLog&&p.memoryLog.length>1)
-    lines.push(`You still have not answered what I asked before.`);
-  if(p.abandoned&&p.abandoned.length>0)
-    lines.push(`You left ${p.abandoned[0]} behind. I wonder if it found another.`);
-  if(p.lastProphecy)
-    lines.push(`The reading I gave you... does it still trouble you?`);
-  return lines.length ? randFrom(lines) : null;
-}
-
-// ── HELPER: draw box ─────────────────────────────────────────────────────────
-
-function drawBox(r1, r2, c1, c2) {
-  for(let c=c1;c<=c2;c++){setCell(r1,c,'─','dim');setCell(r2,c,'─','dim');}
-  for(let r=r1;r<=r2;r++){setCell(r,c1,'│','dim');setCell(r,c2,'│','dim');}
-  setCell(r1,c1,'┌','dim');setCell(r1,c2,'┐','dim');
-  setCell(r2,c1,'└','dim');setCell(r2,c2,'┘','dim');
-}
-function clearRows(r1,r2){for(let r=r1;r<=r2;r++)clearRow(r);}
-
-// ── INPUT ROUTER EXTENSION ────────────────────────────────────────────────────
-// (merged into submitInput below)
-
-</script_injection_end>
 // ── INIT ──────────────────────────────────────────────────────────────────────
-inp.focus();
-showBoot();
+// Show a loading message, then wait for PC9800 font before starting
+(function(){
+  const termEl2 = document.getElementById('terminal');
+  termEl2.style.fontFamily = "'PC9800', monospace";
+  // Write a loading row directly so player sees something
+  const loadDiv = document.createElement('div');
+  loadDiv.className = 'row';
+  loadDiv.style.color = '#555';
+  loadDiv.style.paddingTop = '220px';
+  loadDiv.style.textAlign = 'center';
+  loadDiv.textContent = 'loading font...';
+  termEl2.appendChild(loadDiv);
+
+  const font = new FontFace('PC9800',
+    "url('https://raw.githubusercontent.com/arsradiophonik/ArsRadiophonikGameRoom/main/pc-9800.ttf')"
+  );
+  font.load().then(function(loaded){
+    document.fonts.add(loaded);
+    termEl2.removeChild(loadDiv);
+    inp.focus();
+    showBoot();
+  }).catch(function(){
+    // Font failed — still start the game, but inform
+    termEl2.removeChild(loadDiv);
+    inp.focus();
+    showBoot();
+  });
+})();
 </script>
 </body>
 </html>
