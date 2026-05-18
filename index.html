@@ -224,12 +224,14 @@ const HELP_L = [
   "COMMANDS ──────────────────────────────────────────────────────────────────",
   "  help          this list",
   "  status / st   entity stats",
+  "  scan / enemy  inspect current enemy stats",
   "  companions    list companions",
   "  phase         current lunar phase",
   "  lore [type]   dato / redhex / purpose / core / resource",
   "  feed          feed companions (costs 10 ether)",
   "  abandon       release all companions",
   "  save          save locally",
+  "  export        download save file as JSON",
   "IN ENCOUNTER ────────────────────────────────────────────────────────────",
   "  attack        strike the entity",
   "  talk / listen approach and speak (may trigger ambush)",
@@ -679,6 +681,31 @@ function defeatEnemy(e){
   clearEvent();G.currentEnemy=null;G.inCombat=false;renderStatusBar();autoSave();scheduleEvent();
 }
 
+function cmdExport(){
+  if(!G)return;autoSave();
+  const b=new Blob([JSON.stringify(G,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);
+  a.download=`HDR_${G.username}_Lv${G.level}.json`;a.click();
+  tlog(`[ EXPORTED: HDR_${G.username}_Lv${G.level}.json ]`,'grn');
+}
+
+function cmdScan(){
+  if(!G.currentEnemy){tlog('No enemy present. Nothing to scan.','dim');return;}
+  const e=G.currentEnemy;
+  const pct=Math.round(e.hp/e.hpMax*100);
+  const hcls=pct<25?'red':pct<50?'yel':'gr';
+  tlog(`SCAN :: ${e.name}`,'wh',true);
+  tlog(`  TYPE:    ${e.type} / ${e.subtype}`,typeColor(e.type),true);
+  tlog(`  LEVEL:   ${e.level}`,'gr',true);
+  tlog(`  HP:      ${e.hp}/${e.hpMax}  (${pct}%)`,hcls,true);
+  tlog(`  ETHER:   ${e.ether}`,'pur',true);
+  const strong=(TSTR[e.type]||[]).join(', ')||'none';
+  const weak=(TWKN[e.type]||[]).join(', ')||'none';
+  tlog(`  STR vs:  ${strong}`,'dim',true);
+  tlog(`  WEAK vs: ${weak}`,'dim',true);
+  tlog(`  STATUS:  ${G.inCombat?'IN COMBAT':'PRESENT'}`,'dim',true);
+}
+
 // ── COMMANDS ──────────────────────────────────────────────────────────────────
 function handleGameCmd(raw) {
   if (!G||!gameOn) return;
@@ -694,6 +721,8 @@ function handleGameCmd(raw) {
       G.companions.forEach(c=>tlog(`  ${c.name} [${c.type}/${c.subtype}] Lv.${c.level} HP:${c.hp}/${c.hpMax} Hunger:${c.hunger}%${c.sleeping?' [HBN]':''}`,typeColor(c.type))); break;
     case 'phase':{const p=PHASES[G.phaseIndex];tlog(`${p.sym} ${p.name} -- ${p.effect}`,'gr');break;}
     case 'save':autoSave();tlog('Game saved. ゲームを保存しました。','grn');break;
+    case 'export':cmdExport();break;
+    case 'scan':case 'enemy':cmdScan();break;
     case 'lore':tlog('Type: lore dato / lore redhex / lore purpose / lore core / lore resource','dim');break;
     case 'lore dato':showLore('dato');break;
     case 'lore redhex':showLore('redhex');break;
