@@ -232,6 +232,9 @@ const HELP_L = [
   "  abandon       release all companions",
   "  save          save locally",
   "  export        download save file as JSON",
+  "  load          load a save file from disk (.json)",
+  "  quit          save and return to main menu",
+  "  delete        delete this save permanently",
   "IN ENCOUNTER ────────────────────────────────────────────────────────────",
   "  attack        strike the entity",
   "  talk / listen approach and speak (may trigger ambush)",
@@ -448,7 +451,7 @@ function showRegister() {
   writeStr(5,cx,'ENTITY DESIGNATION','dim');
   writeStr(6,cx,'──────────────────────────────────────────────','dim');
   writeStr(7,cx,'Enter your name to begin. If a save exists it will load.','gr');
-  writeStr(8,cx,'Commands:  [name]  /  new  /  load [name]','dim');
+  writeStr(8,cx,'[name]  /  new  /  load  /  delete [name]','dim');
   const keys=Object.keys(localStorage).filter(k=>k.startsWith('hdr_'));
   if (keys.length) {
     writeStr(11,cx,`SAVES FOUND: ${keys.length}`,'dim');
@@ -463,27 +466,62 @@ function showRegister() {
 
 function handleRegister(val) {
   if (!val) { renderInputRow(); return; }
-  clearRow(ROWS-3);
+  clearRow(ROWS-3); clearRow(ROWS-4);
+
+  // load — open file picker
+  if (val==='load'||val==='loadfile') {
+    triggerFileLoad(d=>{ G=d; startGame(); },
+      err=>{ writeStr(ROWS-3,4,`ERROR: ${err}`,'red'); renderRow(ROWS-3); });
+    return;
+  }
+
+  // delete [name] — remove a local save
+  if (val.startsWith('delete ')) {
+    const n=val.slice(7).trim();
+    if (!n) { writeStr(ROWS-3,4,'ERROR: delete [name]  -- specify a name.','red'); renderRow(ROWS-3); return; }
+    const key='hdr_'+n;
+    if (localStorage.getItem(key)) {
+      localStorage.removeItem(key);
+      writeStr(ROWS-4,4,`DELETED: "${n.toUpperCase()}"  save erased.`,'yel'); renderRow(ROWS-4);
+      showRegister(); // refresh list
+    } else {
+      writeStr(ROWS-3,4,`ERROR: No save found for "${n}".`,'red'); renderRow(ROWS-3);
+    }
+    return;
+  }
+
+  // new — force new game with last entered name
   if (val==='new') {
     if (!lastRegName||lastRegName.length<2) {
       writeStr(ROWS-3,4,'ERROR: Enter a name first, then type "new"','red'); renderRow(ROWS-3); return;
     }
     G=defState(lastRegName); startGame(); return;
   }
+
+  // load [name] — load local save by name (legacy)
   if (val.startsWith('load ')) {
     const n=val.slice(5).trim(), d=loadSave(n);
     if (d) { G=d; startGame(); }
-    else { writeStr(ROWS-3,4,`ERROR: Save not found for "${n}"`,'red'); renderRow(ROWS-3); }
+    else { writeStr(ROWS-3,4,`ERROR: Save not found for "${n}"  (try: delete [name])  `,'red'); renderRow(ROWS-3); }
     return;
   }
+
   if (val.length<2) { writeStr(ROWS-3,4,'ERROR: Name too short (min 2 chars).','red'); renderRow(ROWS-3); return; }
   lastRegName=val;
   const existing=loadSave(val);
   if (existing) {
     G=existing;
     showConfirmBox(`ENTITY FOUND: "${val.toUpperCase()}"  LV.${existing.level}`,
-      'Continue existing save?  (yes / no)',
-      ans=>{ if(ans==='y'||ans==='yes') startGame(); else { G=defState(val); startGame(); } });
+      'Continue existing save?  (yes / no / delete)',
+      ans=>{
+        if(ans==='y'||ans==='yes') startGame();
+        else if(ans==='delete'||ans==='del') {
+          localStorage.removeItem('hdr_'+val);
+          G=null; tlog&&tlog;
+          showRegister();
+        }
+        else { G=defState(val); startGame(); }
+      });
   } else { G=defState(val); startGame(); }
 }
 
@@ -689,6 +727,78 @@ function cmdExport(){
   tlog(`[ EXPORTED: HDR_${G.username}_Lv${G.level}.json ]`,'grn');
 }
 
+function cmdQuit(){
+  showConfirmBox('ABANDON SESSION?',
+    'Save and return to menu?  (yes / no)',
+    ans=>{
+      if(ans==='y'||ans==='yes'){
+        autoSave();
+        gameOn=false;
+        clearTimeout(evT);clearInterval(hunT);clearTimeout(bosT);clearInterval(healT);
+        G=null; logBuf=[];
+        showBoot();
+      } else {
+        showGameScreen(); renderLogArea(); renderAll();
+        tlog('Session continues.','dim',true);
+      }
+    });
+}
+
+function cmdDeleteSave(){
+  if(!G)return;
+  showConfirmBox(`DELETE SAVE: "${G.username.toUpperCase()}"?`,
+    'This CANNOT be undone. Type "yes" to erase.',
+    ans=>{
+      if(ans==='y'||ans==='yes'){
+        try{localStorage.removeItem('hdr_'+G.username);}catch(e){}
+        gameOn=false;
+        clearTimeout(evT);clearInterval(hunT);clearTimeout(bosT);clearInterval(healT);
+        G=null; logBuf=[];
+        showBoot();
+      } else {
+        showGameScreen(); renderLogArea(); renderAll();
+        tlog('Save intact.','dim',true);
+      }
+    });
+}
+
+function cmdLoadFile(){
+  tlog('Opening file picker... select your HDR save (.json)','grn');
+  triggerFileLoad(d=>{
+    autoSave(); // save current before switching
+    gameOn=false; clearTimeout(evT);clearInterval(hunT);clearTimeout(bosT);clearInterval(healT);
+    G=d; logBuf=[];
+    tlog(`SAVE LOADED: ${G.username.toUpperCase()}  LV.${G.level}`,'wh',true);
+    tlog('Resuming session...','dim',true);
+    gameOn=true; updatePhase(); scheduleEvent(); startHunger(); scheduleBoss(); startHeal(); scheduleResource(); autoSave();
+    showGameScreen(); renderLogArea(); renderAll();
+  }, err=>{
+    tlog(`ERROR: ${err}`,'red');
+  });
+}
+
+function triggerFileLoad(onSuccess, onError){
+  let fi=document.getElementById('file-load-input');
+  if(!fi){fi=document.createElement('input');fi.type='file';fi.accept='.json';fi.id='file-load-input';fi.style.cssText='display:none;position:absolute;left:-9999px;top:-9999px;';document.body.appendChild(fi);}
+  fi.value='';
+  fi.onchange=function(ev){
+    const file=ev.target.files[0];
+    if(!file){onError('No file selected.');return;}
+    const r=new FileReader();
+    r.onload=function(e){
+      try{
+        const d=JSON.parse(e.target.result);
+        if(!d||!d.username||!d.level)throw new Error('Invalid format');
+        onSuccess(d);
+      }catch(err){onError('Invalid or corrupted save file.');}
+    };
+    r.readAsText(file);
+    fi.value='';
+  };
+  fi.click();
+  inp.focus();
+}
+
 function cmdScan(){
   if(!G.currentEnemy){tlog('No enemy present. Nothing to scan.','dim');return;}
   const e=G.currentEnemy;
@@ -722,6 +832,9 @@ function handleGameCmd(raw) {
     case 'phase':{const p=PHASES[G.phaseIndex];tlog(`${p.sym} ${p.name} -- ${p.effect}`,'gr');break;}
     case 'save':autoSave();tlog('Game saved. ゲームを保存しました。','grn');break;
     case 'export':cmdExport();break;
+    case 'load':cmdLoadFile();break;
+    case 'quit':case 'exit':cmdQuit();break;
+    case 'delete':cmdDeleteSave();break;
     case 'scan':case 'enemy':cmdScan();break;
     case 'lore':tlog('Type: lore dato / lore redhex / lore purpose / lore core / lore resource','dim');break;
     case 'lore dato':showLore('dato');break;
