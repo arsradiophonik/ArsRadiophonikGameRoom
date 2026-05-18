@@ -152,7 +152,7 @@ const HELP_L=[
   "  help           this list",
   "  status / st    entity stats",
   "  scan           inspect current enemy",
-  "  companions     list companions",
+  "  companions / co  list companions",
   "  phase          current lunar phase",
   "  lore [type]    dato/redhex/purpose/core/resource",
   "  feed           feed companions (costs 10 ether)",
@@ -167,9 +167,15 @@ const HELP_L=[
   "  recruit        attempt to recruit (may trigger ambush)",
   "  offer          offer ether to dismiss it",
   "  flee / run     attempt to escape",
-  "  companion      send a companion to fight",
+  "  companion / send   send a companion to fight",
   "  ignore         walk away",
-  "  yes / no        answer an entity's question"
+  "  yes / no        answer an entity's question",
+  "  quit / exit      save and return to main menu",
+  "  items / inv       view inventory (potions, sigils)",
+  "  use potion        restore 50% HP",
+  "  use sigil         summon a minor demon as companion",
+  "  fuse              merge companion with a willing entity",
+  "  devour            absorb a defeated entity for permanent HP"
 ];
 
 // ── ZODIAC DATA ───────────────────────────────────────────────────────────────
@@ -462,12 +468,13 @@ function renderStatusBar(){
   const pct=Math.round(G.hp/G.hpMax*100);
   const hcls=pct<25?'red':pct<50?'yel':'grn';
   let pos=0;
-  const put=(s,c)=>{writeStr(1,pos,s,c);pos+=s.length;};
-  put(' LVL:','dim');put(String(G.level).padEnd(4),'wh');
-  put('HP:','dim');put(G.hp+'/'+G.hpMax+'  ',hcls);
-  put('EXP:','dim');put(G.exp+'/'+G.expNext+'  ','gr');
-  put('ETHER:','dim');put(G.ether+'  ','pur');
-  put('USER:','dim');put(G.username.toUpperCase(),'cyn');
+  const put=(s,cl)=>{writeStr(1,pos,s,cl);pos+=s.length;};
+  put(' DATO:','cyn');put(String(G.level).padEnd(3),'wh');
+  put('HP:','dim');put(G.hp+'/'+G.hpMax+' ',hcls);
+  put('ETH:','dim');put(G.ether+' ','pur');
+  put('EXP:','dim');put(G.exp+'/'+G.expNext+' ','gr');
+  if(G.items){put('POT:','grn');put((G.items.potions||0)+' ','grn');put('SIG:','pur');put((G.items.sigils||0)+' ','pur');}
+  put(G.username.toUpperCase(),'cyn');
   const ph=PHASES[G.phaseIndex];const phStr=ph.sym+' '+ph.name;
   writeStr(1,COLS-phStr.length-1,phStr,ph.agg?'red':'yel');
   if(G.companions.length>0){
@@ -521,9 +528,9 @@ function submitInput(){
 // ── GAME STATE FACTORY ────────────────────────────────────────────────────────
 function defState(u){
   return{
-    username:u,level:1,exp:0,expNext:expForLevel(1),
-    hp:hpForLevel(1),hpMax:hpForLevel(1),
-    ether:0,companions:[],phaseIndex:0,
+    username:u,level:4,exp:0,expNext:expForLevel(4),playerType:'DATO',
+    hp:hpForLevel(4),hpMax:hpForLevel(4),
+    ether:0,companions:[],phaseIndex:0,items:{potions:0,sigils:0},devoured:[],
     inCombat:false,currentEnemy:null,dead:false,_ev:null,
     created:Date.now(),lastSave:Date.now(),
     psych:{
@@ -554,7 +561,7 @@ function autoSave(){
   try{localStorage.setItem('hdr_'+G.username,JSON.stringify(G));}catch(e){}
 }
 function loadSave(n){try{const d=localStorage.getItem('hdr_'+n);return d?JSON.parse(d):null;}catch(e){return null;}}
-function ensurePsych(){if(!G.psych)G.psych={attacks:0,flees:0,talks:0,recruits:0,offers:0,ignores:0,abandoned:[],companionLost:[],etherSpent:0,saveCount:0,sessionsPlayed:0,oracleVisits:0,oraclePaid:0,lastProphecy:null,answers:{},attrs:{},qAnswered:{},pendingQ:null,memoryLog:[],firstContact:null,mostFeared:null,fleeFrom:{},birthMonth:null,birthDay:null,birthHour:null,gender:null,zodiac:null};}
+function ensurePsych(){if(!G.psych)G.psych={attacks:0,flees:0,talks:0,recruits:0,offers:0,ignores:0,abandoned:[],companionLost:[],etherSpent:0,saveCount:0,sessionsPlayed:0,oracleVisits:0,oraclePaid:0,lastProphecy:null,answers:{},attrs:{},qAnswered:{},pendingQ:null,memoryLog:[],firstContact:null,mostFeared:null,fleeFrom:{},birthMonth:null,birthDay:null,birthHour:null,gender:null,zodiac:null};if(!G.items)G.items={potions:0,sigils:0};if(!G.devoured)G.devoured=[];}
 
 // ── BOOT ──────────────────────────────────────────────────────────────────────
 const BOOT_L=[
@@ -601,13 +608,17 @@ function showRegister(){
   writeStr(5,cx,'How should the singularity call you?','gr');
   writeStr(6,cx,'──────────────────────────────────────────────','dim');
   writeStr(7,cx,'Enter a designation. The entities will remember it.','gr');
-  writeStr(8,cx,'[name] to begin  /  new  /  load [name]  /  loadfile','dim');
-  writeStr(9,cx,'delete [name]  --  erase a save permanently','dim');
+  writeStr(7,cx,'────────────────────────────────────────────────────────','dim');
+  writeStr(8,cx,'Type your name to load or create','gr');
+  writeStr(9,cx,'new         -- force new game with last typed name','dim');
+  writeStr(10,cx,'load NAME   -- load save by name','dim');
+  writeStr(11,cx,'delete NAME -- permanently erase a save','red');
+  writeStr(12,cx,'loadfile    -- load from exported .json file','dim');
   const keys=Object.keys(localStorage).filter(k=>k.startsWith('hdr_'));
   if(keys.length){
-    writeStr(11,cx,'REGISTERED ENTITIES: '+keys.length,'dim');
+    writeStr(14,cx,'REGISTERED ENTITIES: '+keys.length,'dim');
     keys.slice(0,4).forEach((k,i)=>{
-      try{const d=JSON.parse(localStorage.getItem(k));writeStr(12+i,cx+2,(d.username||'?').padEnd(16)+'LV.'+d.level,'gr');}catch(e){}
+      try{const d=JSON.parse(localStorage.getItem(k));writeStr(15+i,cx+2,(d.username||'?').padEnd(16)+'LV.'+d.level+' '+( d.playerType||'DATO'),'gr');}catch(e){}
     });
   }
   renderAll();renderInputRow();inp.focus();
@@ -620,10 +631,13 @@ function handleRegister(val){
     triggerFileLoad(d=>{G=d;ensurePsych();checkIntakeNeeded(startGame);},
       err=>{writeStr(ROWS-3,4,'ERROR: '+err,'red');renderRow(ROWS-3);});return;
   }
-  if(val.startsWith('delete ')){
-    const n=val.slice(7).trim();const key='hdr_'+n;
-    if(localStorage.getItem(key)){localStorage.removeItem(key);showRegister();}
-    else{writeStr(ROWS-3,4,'ERROR: No save found for "'+n+'".','red');renderRow(ROWS-3);}
+  if(val.startsWith('delete ')||val.startsWith('del ')){
+    const raw=val.startsWith('delete ')?val.slice(7).trim():val.slice(4).trim();
+    // Find case-insensitive match
+    const allKeys=Object.keys(localStorage).filter(k=>k.startsWith('hdr_'));
+    const match=allKeys.find(k=>k.slice(4).toLowerCase()===raw.toLowerCase());
+    if(match){localStorage.removeItem(match);writeStr(ROWS-3,4,'DELETED: "'+match.slice(4).toUpperCase()+'".','yel');renderRow(ROWS-3);setTimeout(showRegister,900);}
+    else{writeStr(ROWS-3,4,'ERROR: No save found for "'+raw+'". Check name.','red');renderRow(ROWS-3);}
     return;
   }
   if(val==='new'){
@@ -631,9 +645,13 @@ function handleRegister(val){
     G=defState(lastRegName);beginIntake(startGame);return;
   }
   if(val.startsWith('load ')){
-    const n=val.slice(5).trim(),d=loadSave(n);
+    const raw=val.slice(5).trim();
+    // Case-insensitive match
+    const allKeys=Object.keys(localStorage).filter(k=>k.startsWith('hdr_'));
+    const match=allKeys.find(k=>k.slice(4).toLowerCase()===raw.toLowerCase());
+    const d=match?loadSave(match.slice(4)):null;
     if(d){G=d;ensurePsych();checkIntakeNeeded(startGame);}
-    else{writeStr(ROWS-3,4,'ERROR: Save not found for "'+n+'".','red');renderRow(ROWS-3);}
+    else{writeStr(ROWS-3,4,'ERROR: Save not found for "'+raw+'". Check name.','red');renderRow(ROWS-3);}
     return;
   }
   if(val.length<2){writeStr(ROWS-3,4,'ERROR: Name too short (min 2 chars).','red');renderRow(ROWS-3);return;}
@@ -684,6 +702,7 @@ function beginIntake(onDone){
   writeStr(8,cx,'Under what sky were you born?','gr');
   writeStr(10,cx,'Enter the month of your birth.','dim');
   writeStr(11,cx,'(a number from 1 to 12)','dim');
+  writeStr(ROWS-3,cx,'type "exit" at any time to return to main menu','dim');
   renderAll();renderInputRow();inp.focus();
 }
 
@@ -707,6 +726,9 @@ function checkIntakeNeeded(onDone){
 
 function handleIntake(val){
   clearRow(ROWS-3);
+  if(val==='exit'||val==='quit'||val==='menu'||val==='back'){
+    intakeStep=0;intakeTmp={};G=null;_intakeDone=null;showRegister();return;
+  }
   if(intakeStep===1){
     const m=parseInt(val);
     if(isNaN(m)||m<1||m>12){writeStr(ROWS-3,4,'That is not a valid month.','red');renderRow(ROWS-3);return;}
@@ -768,18 +790,51 @@ function showGameScreen(){
 }
 function updatePhase(){renderStatusBar();renderAll();}
 
+function applyZodiacBonus(){
+  if(!G.psych||!G.psych.zodiac)return;
+  const z=ZODIAC[G.psych.zodiac];if(!z)return;
+  // Element bonuses
+  const bonuses={
+    FIRE:{atkBonus:8,defBonus:0,etherBonus:0},
+    EARTH:{atkBonus:2,defBonus:5,etherBonus:10},
+    AIR:{atkBonus:4,defBonus:2,etherBonus:20},
+    WATER:{atkBonus:2,defBonus:6,etherBonus:5}
+  };
+  const b=bonuses[z.el]||{atkBonus:4,defBonus:3,etherBonus:5};
+  if(!G.zodiacApplied){
+    G.hpMax+=b.defBonus*5;G.hp=G.hpMax;G.ether+=b.etherBonus;
+    G.atkBonus=(G.atkBonus||0)+b.atkBonus;G.zodiacApplied=true;
+  }
+  // Gender modifier
+  if(G.psych.gender==='m')G.atkBonus=(G.atkBonus||0)+3;
+  else if(G.psych.gender==='f'){G.hpMax+=10;G.hp=Math.min(G.hp+10,G.hpMax);}
+  // Birth hour bonus
+  if(G.psych.birthHour!==null&&G.psych.birthHour!==undefined){
+    const h=G.psych.birthHour;
+    if(h>=0&&h<6){G.ether+=15;}       // born at night: ether bonus
+    else if(h>=6&&h<12){G.hpMax+=15;G.hp=G.hpMax;} // morning: hp bonus
+    else if(h>=12&&h<18){G.atkBonus=(G.atkBonus||0)+5;} // afternoon: attack bonus
+    else{G.ether+=8;G.hpMax+=8;G.hp=G.hpMax;}  // evening: balanced
+  }
+}
 function startGame(){
   if(G.psych)G.psych.sessionsPlayed=(G.psych.sessionsPlayed||0)+1;
+  applyZodiacBonus();
   showGameScreen();
   tlog('=== 十六進データの鎮魂歌 ===','wh',true);
-  tlog('You are a bodiless entity trapped in the virtual plane.','gr');
-  tlog('The demons here were conjured by black magic in every cable.','dim');
-  tlog('Your only law: consume or be consumed.','yel');
+  tlog('ENTITY CLASS: DATO  //  DESIGNATION: '+G.username.toUpperCase()+'  //  LVL: '+G.level,'cyn',true);
+  tlog('You are a virtualized human, stripped of your body by the singularity.','gr');
+  tlog('You exist in the virtual plane as data. You are DATO.','dim');
+  tlog('The demons here were conjured through dark protocols. Your law: consume or be consumed.','yel');
   tlog('HP regenerates slowly when not in combat. Type "help".','dim');
-  // Flavor line based on zodiac if available
   if(G.psych&&G.psych.zodiac){
     const z=ZODIAC[G.psych.zodiac];
-    if(z)setTimeout(()=>tlog('...'+z.el+'. The net noticed.','pur'),3000);
+    if(z){
+      setTimeout(()=>{
+        tlog('...'+z.el+' element detected in your data signature.','pur');
+        tlog('ATK bonus: +'+(G.atkBonus||0)+'  HP MAX: '+G.hpMax+'  Ether: '+G.ether,'dim');
+      },2000);
+    }
   }
   gameOn=true;updatePhase();scheduleEvent();startHunger();scheduleBoss();startHeal();scheduleResource();autoSave();
   inp.focus();
@@ -812,7 +867,7 @@ function showConfirmBox(title,prompt,cb){
 }
 function handleConfirm(val){
   const cb=_confirmCB;_confirmCB=null;
-  if(cb){inputMode='game';cb(val);renderTitleBar();renderStatusBar();renderSep20();renderLogArea();renderEventBox();renderInputRow();renderAll();}
+  if(cb){cb(val);renderTitleBar();renderStatusBar();renderSep20();renderLogArea();renderEventBox();renderInputRow();renderAll();}
 }
 
 // ── LORE ──────────────────────────────────────────────────────────────────────
@@ -890,7 +945,8 @@ function triggerEncounter(){
   if(Math.random()<0.45){const fl=psychFlavor(e);if(fl)setTimeout(()=>tlog(e.name+': "'+fl+'"','red'),800);}
   // ORATOR spontaneous prophecy 20%
   if(e.subtype==='ORATOR'&&Math.random()<0.20)setTimeout(()=>spontaneousProphecy(e),1200);
-  setEvent('ENCOUNTER :: '+e.name,'['+e.type+']['+e.subtype+'] Lv.'+e.level+' HP:'+e.hp+' ETH:'+e.ether+(agg?' [!]FULL MOON':''),agg?'attack  companion':'attack  talk  recruit  offer  flee  companion');
+  const hasCo=G.companions.length>0;
+  setEvent('ENCOUNTER :: '+e.name,'['+e.type+']['+e.subtype+'] Lv.'+e.level+' HP:'+e.hp+' ETH:'+e.ether+(agg?' [!]FULL MOON':''),agg?'attack'+(hasCo?' companion':''):'attack  talk  recruit  offer  flee'+(hasCo?' companion':''));
 }
 
 function triggerNeg(){
@@ -943,13 +999,14 @@ function triggerResource(){
 function startHunger(){
   hunT=setInterval(()=>{
     if(!gameOn||!G)return;
-    G.companions.forEach(c=>{
-      if(c.immortalHunger)return;
-      c.hunger=Math.max(0,c.hunger-rand(3,7));
-      if(c.hunger<=0){if(Math.random()<0.6){tlog(c.name+' abandons you. Hunger consumed it.','yel');G.companions=G.companions.filter(x=>x!==c);}else tlog(c.name+' is at the edge. Feed it.','yel');}
-      else if(c.hunger<=15)tlog(c.name+' is starving.','yel');
+    if(G.companions.length>0){const c=G.companions[0];
+      if(!c.immortalHunger){
+        c.hunger=Math.max(0,c.hunger-rand(2,5));
+        if(c.hunger<=0){if(Math.random()<0.6){tlog(c.name+' abandons you into the void. Hunger consumed it.','red');if(G.psych)G.psych.companionLost.push(c.name);G.companions=[];}else tlog(c.name+' is at the edge of dissolution. Feed it now.','yel');}
+        else if(c.hunger<=15)tlog(c.name+' is starving. type "feed".','yel');
+      }
       if(c.sleeping&&Math.random()<0.3){c.sleeping=false;c.hp=Math.floor(c.hpMax*0.5);tlog(c.name+' awakens from hibernation.','cyn');}
-    });
+    }
     if(!phT)phT=setTimeout(advPhase,60000);
     renderStatusBar();autoSave();
   },30000);
@@ -963,7 +1020,7 @@ function advPhase(){
 }
 function gainExp(a){
   G.exp+=a;
-  while(G.exp>=G.expNext){G.exp-=G.expNext;G.level++;G.expNext=expForLevel(G.level);G.hpMax=hpForLevel(G.level);G.hp=G.hpMax;tlog('レベルアップ -- LEVEL '+G.level+' reached. HP restored to '+G.hpMax+'.','wh');G.companions.forEach(c=>{if(Math.random()<0.4){c.level++;c.hpMax=hpForLevel(c.level);c.hp=c.hpMax;}});}
+  while(G.exp>=G.expNext){G.exp-=G.expNext;G.level++;G.expNext=expForLevel(G.level);G.hpMax=hpForLevel(G.level);G.hp=G.hpMax;tlog('レベルアップ -- LEVEL '+G.level+' reached. HP restored to '+G.hpMax+'.','wh');if(G.companions.length>0&&Math.random()<0.5){G.companions[0].level++;G.companions[0].hpMax=hpForLevel(G.companions[0].level);G.companions[0].hp=G.companions[0].hpMax;tlog(G.companions[0].name+' also grows stronger.','cyn');}}
   renderStatusBar();
 }
 function startHeal(){if(healT)clearInterval(healT);healT=setInterval(()=>{if(!gameOn||!G||G.inCombat||G.hp>=G.hpMax)return;const r=Math.max(1,Math.floor(G.hpMax*0.03));G.hp=Math.min(G.hpMax,G.hp+r);renderStatusBar();autoSave();},15000);}
@@ -977,8 +1034,18 @@ function defeatEnemy(e){
   G.ether+=e.ether;
   const xp=Math.floor(e.level*15*(e.type==='CORE'?3:e.type==='RESOURCE'?10:e.type==='SATAN'?20:1));
   gainExp(xp);tlog(e.name+' defeated. +'+e.ether+' Ether  +'+xp+' EXP.','wh');
-  if(e.type==='RESOURCE'||e.type==='SATAN'){G.companions.forEach(c=>c.immortalHunger=true);tlog('Your companions will never hunger again.','grn');}
-  clearEvent();G.currentEnemy=null;G.inCombat=false;renderStatusBar();autoSave();scheduleEvent();
+  if(e.type==='RESOURCE'||e.type==='SATAN'){G.companions.forEach(c=>c.immortalHunger=true);tlog('Your companion will never hunger again.','grn');}
+  // Item drops
+  if(!G.items)G.items={potions:0,sigils:0};
+  const roll=Math.random();
+  if(roll<0.30){G.items.potions++;tlog('[ITEM] Hex Potion obtained. (use potion)','grn');}
+  else if(roll<0.50){G.items.sigils++;tlog('[ITEM] Summon Sigil obtained. (use sigil)','grn');}
+  // Offer devour option
+  tlog('You may also devour '+e.name+' for permanent power. (devour)','pur');
+  G.currentEnemy=e; // keep reference for devour
+  G.inCombat=false;
+  setEvent('DEFEATED :: '+e.name,'What will you do with the remains?','devour  ignore');
+  renderStatusBar();autoSave();
 }
 
 // ── COMMANDS ──────────────────────────────────────────────────────────────────
@@ -992,10 +1059,12 @@ function handleGameCmd(raw){
       tlog('ENTITY: Lv.'+G.level+' HP:'+G.hp+'/'+G.hpMax+' EXP:'+G.exp+'/'+G.expNext+' Ether:'+G.ether,'gr');
       tlog(G.inCombat?'[IN COMBAT -- no regen]':'[regen +'+Math.max(1,Math.floor(G.hpMax*0.03))+'/15s]','dim');break;
     case 'companions':case 'co':
-      if(!G.companions.length){tlog('No companions.','dim');break;}
-      G.companions.forEach(c=>tlog('  '+c.name+' ['+c.type+'/'+c.subtype+'] Lv.'+c.level+' HP:'+c.hp+'/'+c.hpMax+' Hunger:'+c.hunger+'%'+(c.sleeping?' [HBN]':''),typeColor(c.type)));break;
+      if(!G.companions.length){tlog('No companion. Use sigil to summon or recruit one.','dim');break;}
+      else{const c=G.companions[0];tlog('COMPANION: '+c.name+' ['+c.type+'/'+c.subtype+'] Lv.'+c.level,typeColor(c.type),true);tlog('  HP:'+c.hp+'/'+c.hpMax+'  Hunger:'+c.hunger+'%'+(c.sleeping?' [HIBERNATION]':'')+(c.absorbedFrom?' [FUSED: '+c.absorbedFrom+']':''),typeColor(c.type),true);if(c.bonusAtk||c.bonusDef)tlog('  Fusion bonuses: +'+c.bonusAtk+' ATK  +'+c.bonusDef+' DEF','cyn',true);}
+      if(G.devoured&&G.devoured.length>0)tlog('  Devoured: '+G.devoured.length+' entities absorbed.','red',true);break;
     case 'phase':{const p=PHASES[G.phaseIndex];tlog(p.sym+' '+p.name+' -- '+p.effect,'gr');break;}
-    case 'save':autoSave();tlog('Game saved. ゲームを保存しました。','grn');break;
+    case 'quit':case 'exit':case 'menu':cmdQuitToMenu();break;
+    case 'save':autoSave();tlog('[ SAVED ] '+G.username.toUpperCase()+' LV.'+G.level+' -- ゲームを保存しました。','grn');break;
     case 'export':cmdExport();break;
     case 'scan':case 'enemy':cmdScan();break;
     case 'lore':tlog('lore dato / lore redhex / lore purpose / lore core / lore resource','dim');break;
@@ -1013,6 +1082,11 @@ function handleGameCmd(raw){
     case 'flee':case 'run':cmdFlee();break;
     case 'companion':case 'send':cmdCompanion();break;
     case 'ignore':cmdIgnore();break;
+    case 'items':case 'inv':case 'inventory':cmdItems();break;
+    case 'use potion':cmdUsePotion();break;
+    case 'use sigil':cmdUseSigil();break;
+    case 'fuse':cmdFuse();break;
+    case 'devour':case 'eat':case 'consume':cmdDevour();break;
     case 'profile':cmdProfile();break;
     case 'oracle':case 'read':
       if(G.currentEnemy&&G.currentEnemy.subtype==='ORATOR'){cmdOracle(G.currentEnemy);}
@@ -1024,6 +1098,51 @@ function handleGameCmd(raw){
   renderStatusBar();
 }
 
+function cmdItems(){
+  if(!G.items)G.items={potions:0,sigils:0};
+  tlog('INVENTORY ─────────────────────────────','wh',true);
+  tlog('  Hex Potions : '+G.items.potions+'  (use potion -- restores 50% HP)','grn',true);
+  tlog('  Sigils      : '+G.items.sigils+'  (use sigil -- summons companion if none)','pur',true);
+  if(G.devoured&&G.devoured.length>0){
+    tlog('  DEVOURED    : '+G.devoured.length+' entities absorbed.','red',true);
+    G.devoured.slice(-3).forEach(d=>tlog('    '+d.name+' ['+d.type+'] Lv.'+d.level+' +'+d.hpGain+'HP','dim',true));
+  }
+}
+function cmdUsePotion(){
+  if(!G.items||G.items.potions<=0){tlog('No potions. Defeat enemies to find them.','dim');return;}
+  const heal=Math.floor(G.hpMax*0.5);G.hp=Math.min(G.hpMax,G.hp+heal);G.items.potions--;
+  tlog('Hex Potion consumed. +'+heal+' HP. ('+G.hp+'/'+G.hpMax+')','grn');
+  renderStatusBar();autoSave();
+}
+function cmdUseSigil(){
+  if(!G.items||G.items.sigils<=0){tlog('No sigils. Defeat enemies to find them.','dim');return;}
+  if(G.companions.length>=1){tlog('You already carry a companion. Fuse or devour first.','dim');return;}
+  G.items.sigils--;
+  // Summon a random minor demon as companion
+  const minor=makeCreature(false,false,false);
+  minor.level=Math.max(1,G.level-2+rand(0,3));
+  minor.hp=hpForLevel(minor.level);minor.hpMax=minor.hp;
+  G.companions=[{name:minor.name,type:minor.type,subtype:minor.subtype,level:minor.level,
+    hp:minor.hp,hpMax:minor.hpMax,hunger:70,sleeping:false,immortalHunger:false,bonusAtk:0,bonusDef:0}];
+  tlog('SIGIL ACTIVATED -- '+minor.name+' ['+minor.type+'] materializes.','pur');
+  tlog(minor.name+' is bound to you now.','dim');
+  renderStatusBar();autoSave();
+}
+function cmdQuitToMenu(){
+  autoSave();
+  showConfirmBox('RETURN TO MAIN MENU?','All progress saved. Type "yes" to quit, "no" to stay.',ans=>{
+    if(ans==='yes'||ans==='y'){
+      gameOn=false;
+      clearTimeout(evT);clearInterval(hunT);clearTimeout(bosT);clearInterval(healT);
+      G=null;logBuf=[];
+      showRegister();
+    }else{
+      inputMode='game';
+      showGameScreen();renderLogArea();renderAll();
+      tlog('...still here.','dim');
+    }
+  });
+}
 function cmdProfile(){
   if(!G.psych||!G.psych.attrs||Object.keys(G.psych.attrs).length===0){
     tlog('No profile data yet. Speak to the entities.','dim');return;
@@ -1059,7 +1178,7 @@ function cmdAttack(){
   if(!G.currentEnemy){tlog('No enemy present.','dim');return;}
   const e=G.currentEnemy;G.inCombat=true;
   if(G.psych)G.psych.attacks=(G.psych.attacks||0)+1;
-  const atk=Math.floor(rand(G.level*8,G.level*15));e.hp=Math.max(0,e.hp-atk);
+  const atkB=G.atkBonus||0;const atk=Math.floor(rand(G.level*8+atkB,G.level*15+atkB));e.hp=Math.max(0,e.hp-atk);
   tlog('You attack '+e.name+' -- '+atk+' damage.','org');
   if(e.hp<=0){defeatEnemy(e);return;}
   const dmg=Math.max(1,Math.floor(rand(e.level*5,e.level*10)*(e.type==='RESOURCE'?3:e.type==='SATAN'?5:1)));
@@ -1089,7 +1208,6 @@ function cmdTalk(){
 function cmdRecruit(){
   if(!G.currentEnemy){tlog('No entity present.','dim');return;}
   const e=G.currentEnemy;
-  if(G.companions.length>=4){tlog('Cannot have more than 4 companions.','dim');return;}
   if(PHASES[G.phaseIndex].agg){tlog(e.name+' rejects all alliances. The full moon blinds them.','red');return;}
   if(e.type==='CORE'||e.type==='RESOURCE'){tlog(e.name+' cannot be recruited.','red');return;}
   if(Math.random()<0.3&&!G.inCombat){triggerAmbush(e);return;}
@@ -1097,13 +1215,72 @@ function cmdRecruit(){
   const ch=Math.max(0.03,(rec.includes(e.subtype)?0.55:e.subtype==='ACTOR'?0.3:e.type==='SATAN'?0.05:0.15)-Math.max(0,(e.level-G.level)*0.02));
   if(Math.random()<ch){
     if(G.psych)G.psych.recruits=(G.psych.recruits||0)+1;
-    G.companions.push({name:e.name,type:e.type,subtype:e.subtype,level:e.level,hp:e.hpMax,hpMax:e.hpMax,hunger:70,sleeping:false,immortalHunger:false});
-    tlog(e.name+' agrees to join you.','wh');tlog(randFrom(RECL[e.type]||RECL["RED HEX"]),'dim');
-    G.currentEnemy=null;G.inCombat=false;clearEvent();renderStatusBar();autoSave();scheduleEvent();
+    if(G.companions.length>=1){
+      // Already have a companion — offer fusion
+      const old=G.companions[0];
+      tlog(e.name+' agrees. But you already carry '+old.name+'.','yel');
+      tlog('Fusion is possible. Type "fuse" to merge them. '+old.name+' will be absorbed.','dim');
+      G._pendingFusion=e;
+      setEvent('FUSION OFFER :: '+e.name,'['+e.type+'] Lv.'+e.level+' -- merge with '+old.name+'?','fuse  devour  attack  ignore');
+    }else{
+      G.companions=[{name:e.name,type:e.type,subtype:e.subtype,level:e.level,hp:e.hpMax,hpMax:e.hpMax,hunger:70,sleeping:false,immortalHunger:false,bonusAtk:0,bonusDef:0}];
+      tlog(e.name+' bonds with you. One companion only. Guard it well.','wh');
+      tlog(randFrom(RECL[e.type]||RECL["RED HEX"]),'dim');
+      G.currentEnemy=null;G.inCombat=false;clearEvent();renderStatusBar();autoSave();scheduleEvent();
+    }
   }else{
     tlog(e.name+' rejects your proposal.','red');tlog(randFrom(REJL[e.type]||REJL["RED HEX"]),'dim');
     setEvent('REJECTED :: '+e.name,e.name+' is not interested.','attack  offer  ignore');
   }
+}
+function cmdFuse(){
+  const e=G._pendingFusion||G.currentEnemy;
+  if(!e){tlog('No fusion available.','dim');return;}
+  if(G.companions.length===0){tlog('You have no companion to fuse.','dim');return;}
+  const old=G.companions[0];
+  // Fusion: new entity keeps name, gains combined level, absorbs type advantages
+  const newLvl=Math.floor((old.level+e.level)/2)+1;
+  const newHpMax=hpForLevel(newLvl)+Math.floor(old.hpMax*0.3);
+  const fused={
+    name:e.name,type:e.type,subtype:e.subtype,level:newLvl,
+    hp:newHpMax,hpMax:newHpMax,hunger:60,sleeping:false,immortalHunger:false,
+    bonusAtk:Math.floor(old.level*2),bonusDef:Math.floor(old.level*1.5),
+    absorbedFrom:old.name,absorbedType:old.type
+  };
+  G.companions=[fused];
+  G._pendingFusion=null;
+  tlog('FUSION -- '+old.name+' absorbed into '+e.name+'.','yel');
+  tlog(e.name+' emerges stronger. LV.'+newLvl+' HP:'+newHpMax+'.','wh');
+  tlog('Inherited: +'+fused.bonusAtk+' ATK  +'+fused.bonusDef+' DEF from '+old.name+'.','cyn');
+  G.currentEnemy=null;G.inCombat=false;clearEvent();renderStatusBar();autoSave();scheduleEvent();
+}
+function cmdDevour(){
+  // Devour a defeated/current enemy for permanent benefits
+  const e=G._pendingFusion||G.currentEnemy;
+  if(!e){tlog('Nothing to devour.','dim');return;}
+  G._pendingFusion=null;
+  const hpGain=Math.floor(e.level*3)+5;
+  const etherGain=Math.floor(e.level*2);
+  G.hpMax+=hpGain;G.hp=Math.min(G.hp+hpGain,G.hpMax);G.ether+=etherGain;
+  if(!G.devoured)G.devoured=[];
+  G.devoured.push({name:e.name,type:e.type,level:e.level,hpGain,etherGain});
+  tlog('DEVOURED -- '+e.name+'.','red');
+  tlog('Permanent: +'+hpGain+' HP MAX  +'+etherGain+' Ether.','org');
+  // Absorb type resistance/bonus flavor
+  // Extra bonus for elite types
+  if(e.type==='RESOURCE'){G.hpMax+=30;G.hp=G.hpMax;G.ether+=50;tlog('[!] RESOURCE devoured. +30 HP MAX permanent. +50 Ether.','yel');}
+  if(e.type==='SATAN'){G.hpMax+=50;G.hp=G.hpMax;G.ether+=100;G.atkBonus=(G.atkBonus||0)+15;tlog('[!!] SATAN devoured. +50 HP MAX. +100 Ether. +15 ATK permanent.','red');}
+  if(e.type==='CORE'){G.hpMax+=15;G.hp=G.hpMax;G.atkBonus=(G.atkBonus||0)+8;tlog('[CORE devoured]. +15 HP MAX. +8 ATK permanent.','org');}
+  const typeBonus={
+    'DATO':'Your logic processes accelerate. DATO absorbs DATO.',
+    'RED HEX':'Dark circuits integrate into your being.',
+    'PURPOSE':'Fragments of purpose restructure you.',
+    'CORE':'A fragment of the singularity burns inside you.',
+    'RESOURCE':'Time itself pauses briefly for you.',
+    'SATAN':'Something ancient and irreversible stirs inside you.'
+  };
+  tlog(typeBonus[e.type]||'The data integrates.','pur');
+  G.currentEnemy=null;G.inCombat=false;clearEvent();renderStatusBar();autoSave();scheduleEvent();
 }
 function cmdOffer(){
   if(!G.currentEnemy){tlog('No entity present.','dim');return;}
@@ -1122,11 +1299,13 @@ function cmdFlee(){
   else{const dmg=rand(e.level*4,e.level*8);G.hp=Math.max(0,G.hp-dmg);tlog(e.name+' catches you -- '+dmg+' damage.','red');renderStatusBar();if(G.hp<=0)playerDeath('Consumed by '+e.name+' while fleeing.');else setEvent('COMBAT :: '+e.name,'Failed to escape. HP: '+G.hp+'/'+G.hpMax,'attack  offer  flee');}
 }
 function cmdCompanion(){
-  if(!G.companions.length||!G.currentEnemy){tlog('No companion or no enemy.','dim');return;}
+  if(!G.companions.length){tlog('No companion present. Use a sigil to summon one (use sigil).','dim');return;}
+  if(!G.currentEnemy){tlog('No enemy to fight.','dim');return;}
   const e=G.currentEnemy;const active=G.companions.filter(c=>!c.sleeping&&c.hp>0);
   if(!active.length){tlog('No companion can fight right now.','dim');return;}
   const c=active[0];const bonus=(TSTR[c.type]||[]).includes(e.type)?1.5:(TWKN[c.type]||[]).includes(e.type)?0.6:1;
-  const atk=Math.floor(rand(c.level*6,c.level*12)*bonus);e.hp=Math.max(0,e.hp-atk);
+  const fusionAtk=c.bonusAtk||0;
+  const atk=Math.floor((rand(c.level*6,c.level*12)+fusionAtk)*bonus);e.hp=Math.max(0,e.hp-atk);
   tlog(c.name+' attacks '+e.name+' -- '+atk+' damage'+(bonus>1?' (EFFECTIVE!)':'')+'.','cyn');
   if(e.hp<=0){defeatEnemy(e);return;}
   const dmg=rand(e.level*4,e.level*8);c.hp=Math.max(0,c.hp-dmg);tlog(e.name+' strikes '+c.name+' -- '+dmg+' damage.','red');
@@ -1194,16 +1373,17 @@ function cmdPsychAnswer(isYes){
 function cmdFeed(){
   if(!G.companions.length){tlog('No companions to feed.','dim');return;}
   if(G.ether<10){tlog('Not enough ether. Need 10, have '+G.ether+'.','dim');return;}
-  G.ether-=10;G.companions.forEach(c=>{if(!c.immortalHunger)c.hunger=Math.min(100,c.hunger+30);});
-  tlog('You channel ether to your companions. Hunger recedes.','cyn');renderStatusBar();autoSave();
+  G.ether-=10;if(G.companions.length>0&&!G.companions[0].immortalHunger)G.companions[0].hunger=Math.min(100,G.companions[0].hunger+40);
+  tlog('You channel ether into '+( G.companions.length>0?G.companions[0].name:'nothing')+'. Hunger recedes.','cyn');renderStatusBar();autoSave();
 }
 function cmdAbandon(){
   if(!G.companions.length){tlog('No companions.','dim');return;}
-  showConfirmBox('ABANDON ALL COMPANIONS?',G.companions.map(c=>c.name).join(', ')+'  -- Type "yes" to confirm.',ans=>{
+  const cname=G.companions.length>0?G.companions[0].name:'none';
+  showConfirmBox('ABANDON '+cname+'?',cname+'  -- Type "yes" to confirm.',ans=>{
     if(ans==='yes'||ans==='y'){
-      G.companions.forEach(c=>{if(G.psych&&G.psych.abandoned)G.psych.abandoned.push(c.name);tlog('You abandon '+c.name+'.','yel');});
-      G.companions=[];renderStatusBar();autoSave();
-    }else tlog('Abandoned.','dim');
+      if(G.companions.length>0){const c=G.companions[0];if(G.psych&&G.psych.abandoned)G.psych.abandoned.push(c.name);tlog('You abandon '+c.name+' to the void.','yel');G.companions=[];}
+      renderStatusBar();autoSave();
+    }else tlog('You keep '+cname+' with you.','dim');
     showGameScreen();renderLogArea();renderAll();
   });
 }
